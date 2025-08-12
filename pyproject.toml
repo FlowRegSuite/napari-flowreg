@@ -1,0 +1,13 @@
+[project]
+name = "napari-flowreg"
+version = "0.0.1-alpha.1"
+classifiers = [
+    "Framework :: napari",
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
