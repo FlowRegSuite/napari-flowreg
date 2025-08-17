@@ -1,7 +1,13 @@
-# Flow-Registration: Optical flow based motion correction for 2-photon neuroimaging microscopy videos
+# <img src="img/flowreglogo.png" alt="FlowReg logo" height="64"> napari-FlowReg
 
 This repository contains the napari wrapper for the Flow-Registration toolbox, which is a toolbox for the compensation and stabilization of multichannel microscopy videos. 
 The publication for this toolbox can be found [here](https://doi.org/10.1002/jbio.202100330) and the project website with video results [here](https://www.snnu.uni-saarland.de/flow-registration/).
+
+**Related projects**
+- PyFlowReg: https://github.com/FlowRegSuite/pyflowreg
+- Original Flow-Registration repo: https://github.com/FlowRegSuite/flow_registration
+- ImageJ/Fiji plugin: https://github.com/FlowRegSuite/flow_registration_IJ
+- MCP tools for LLM workflows: https://github.com/FlowRegSuite/pyflowreg-mcp
 
 ![Fig1](img/bg.jpg)
 
