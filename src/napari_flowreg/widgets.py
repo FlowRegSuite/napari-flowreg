@@ -28,12 +28,14 @@ except (ImportError, ModuleNotFoundError):
 
 class FlowRegWidget(QWidget):
     """Main widget for FlowReg motion correction in napari."""
+    progress_val = Signal(int)
     
     def __init__(self, napari_viewer: Viewer):
         super().__init__()
         self.viewer = napari_viewer
         self.current_options = None
         self._init_ui()
+        self.progress_val.connect(self.progress_bar.setValue)
         
     def _init_ui(self):
         """Initialize the user interface matching ImageJ design."""
@@ -166,13 +168,15 @@ class FlowRegWidget(QWidget):
         layout.addWidget(QLabel("Start frame:"), 1, 0)
         self.ref_start_spin = QSpinBox()
         self.ref_start_spin.setMinimum(0)
-        self.ref_start_spin.setValue(100)
+        self.ref_start_spin.setMaximum(99999)  # Set high default max, will be updated based on data
+        self.ref_start_spin.setValue(0)
         layout.addWidget(self.ref_start_spin, 1, 1)
         
         layout.addWidget(QLabel("End frame:"), 1, 2)
         self.ref_end_spin = QSpinBox()
         self.ref_end_spin.setMinimum(0)
-        self.ref_end_spin.setValue(200)
+        self.ref_end_spin.setMaximum(99999)  # Set high default max, will be updated based on data
+        self.ref_end_spin.setValue(20)
         layout.addWidget(self.ref_end_spin, 1, 3)
         
         # External reference layer (disabled by default)
@@ -195,6 +199,12 @@ class FlowRegWidget(QWidget):
         self.sigma_t.setSingleStep(0.1)
         self.sigma_t.setValue(0.1)
         layout.addWidget(self.sigma_t, 3, 3)
+        
+        # Add checkbox for exporting flow field
+        self.export_flow_check = QCheckBox("Export flow field")
+        self.export_flow_check.setChecked(False)  # Default to NOT exporting flow
+        self.export_flow_check.setToolTip("Save displacement field for visualization and analysis")
+        layout.addWidget(self.export_flow_check, 4, 0, 1, 2)
         
         group.setLayout(layout)
         return group
@@ -300,14 +310,9 @@ class FlowRegWidget(QWidget):
             n_frames = layer.data.shape[0]
             self.ref_start_spin.setMaximum(n_frames - 1)
             self.ref_end_spin.setMaximum(n_frames - 1)
-            
-            # Set default range like jupiter demo (frames 100-200)
-            if n_frames > 200:
-                self.ref_start_spin.setValue(100)
-                self.ref_end_spin.setValue(200)
-            else:
-                self.ref_start_spin.setValue(0)
-                self.ref_end_spin.setValue(min(50, n_frames - 1))
+
+            self.ref_start_spin.setValue(0)
+            self.ref_end_spin.setValue(min(50, n_frames - 1))
                 
     def _get_reference_frames(self) -> np.ndarray:
         """Get reference frames based on selected method."""
@@ -355,7 +360,7 @@ class FlowRegWidget(QWidget):
         options_dict = {
             "quality_setting": self.quality_combo.currentText(),
             "alpha": alpha,
-            "save_w": True,  # Save displacement fields
+            "save_w": self.export_flow_check.isChecked(),  # Use checkbox value for save_w
             "output_typename": "double",
             "verbose": True
         }
@@ -380,7 +385,8 @@ class FlowRegWidget(QWidget):
     @thread_worker
     def _run_motion_correction(self, video_array: np.ndarray, 
                               reference: np.ndarray, 
-                              options_dict: dict):
+                              options_dict: dict,
+                              progress_callback=None):
         """Run motion correction in a separate thread."""
         try:
             # Import pyflowreg inside the worker to avoid Numba import issues
@@ -402,8 +408,9 @@ class FlowRegWidget(QWidget):
             options_dict["quality_setting"] = quality_map[quality_setting]
             options = OFOptions(**options_dict)
             
-            # Run compensation
-            registered, flow = compensate_arr(video_array, reference, options)
+            # Run compensation with progress callback if provided
+            registered, flow = compensate_arr(video_array, reference, options, 
+                                            progress_callback=progress_callback)
             return registered, flow
         except Exception as e:
             raise e
@@ -443,8 +450,16 @@ class FlowRegWidget(QWidget):
             self.log(f"Starting motion correction on {layer_name}...")
             self.log(f"Video shape: {video_array.shape}")
             self.log(f"Reference shape: {reference.shape}")
+
+            def update_progress(current_frame, total_frames):
+                if not total_frames:
+                    self.progress_max.emit(0)
+                    return
+                self.progress_max.emit(100)
+                self.progress_val.emit(int((current_frame * 100) // total_frames))
             
-            worker = self._run_motion_correction(video_array, reference, options_dict)
+            worker = self._run_motion_correction(video_array, reference, options_dict, 
+                                                progress_callback=update_progress)
             worker.returned.connect(self._on_correction_complete)
             worker.errored.connect(self._on_correction_error)
             worker.start()
@@ -459,28 +474,38 @@ class FlowRegWidget(QWidget):
         registered, flow = result
         
         self.log("Motion correction complete!")
+        self.log(f"Corrected data shape: {registered.shape}")
         
         # Add corrected data to viewer
+        # Use rgb=False to ensure single-channel data is not misinterpreted as multichannel
         layer_name = self.input_combo.currentText()
         self.viewer.add_image(
             registered,
             name=f"{layer_name}_corrected",
-            colormap="green"
+            rgb=False,  # Explicitly specify this is grayscale, not RGB
+            colormap="gray"
         )
         
         # Optionally add flow field visualization
-        if flow is not None:
+        if flow is not None and self.export_flow_check.isChecked():
             # Create flow magnitude for visualization
             flow_magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+            # Export flow magnitude as grayscale image
             self.viewer.add_image(
                 flow_magnitude,
                 name=f"{layer_name}_flow_magnitude",
-                colormap="turbo",
-                visible=False
+                rgb=False,  # Ensure it's treated as grayscale
+                colormap="gray",  # Use grayscale colormap as requested
+                visible=True  # Make visible so user can see it
             )
+            
+            # TODO: Add proper flow color coding visualization using HSV or quiver plots
+            # This would show both direction and magnitude of the optical flow
             
             self.log(f"Max displacement: {np.max(flow_magnitude):.2f} pixels")
             self.log(f"Mean displacement: {np.mean(flow_magnitude):.2f} pixels")
+        else:
+            self.log("Flow field export disabled")
             
         show_info("Motion correction completed successfully!")
         self._reset_ui()
@@ -507,6 +532,7 @@ class FlowRegWidget(QWidget):
         self.start_button.setEnabled(True)
         self.cancel_button.setEnabled(False)
         self.progress_bar.setVisible(False)
+        self.progress_bar.setValue(0)
         
     def _on_save_settings(self):
         """Save current settings to file."""
