@@ -396,7 +396,10 @@ class FlowRegWidget(QWidget):
             }
             
             # Create OFOptions from dict
-            options_dict["quality_setting"] = quality_map[options_dict["quality_setting"]]
+            quality_setting = options_dict["quality_setting"]
+            if quality_setting not in quality_map:
+                raise ValueError(f"Invalid quality setting: {quality_setting}")
+            options_dict["quality_setting"] = quality_map[quality_setting]
             options = OFOptions(**options_dict)
             
             # Run compensation

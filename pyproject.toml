@@ -19,11 +19,30 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "napari",
-    "napari-plugin-engine>=0.2.0",
+    "napari>=0.4.18",
     "pyflowreg",
     "qtpy",
     "numpy",
+    "magicgui>=0.8.0",
+]
+
+[project.optional-dependencies]
+testing = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-qt",
+    "pytest-xvfb",
+    "npe2>=0.7.0",
+    "PySide6>=6.5",
+    "h5py",
+    "tifffile",
+    "psutil",
+    "tomli>=2.0.1",
+]
+dev = [
+    "pre-commit",
+    "black",
+    "ruff",
 ]
 
 [project.entry-points."napari.manifest"]
@@ -38,3 +57,42 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 napari_flowreg = ["napari.yaml"]
+
+# Testing configuration
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "qt: tests requiring a Qt event loop",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+filterwarnings = [
+    "error:::napari_flowreg",
+    "ignore::DeprecationWarning:napari",
+    "ignore::DeprecationWarning:qtpy",
+    "ignore::DeprecationWarning:numba",
+    "ignore::RuntimeWarning:numba",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["napari_flowreg"]
+branch = true
+omit = [
+    "*/tests/*",
+    "*/_tests/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "except ImportError:",
+]
