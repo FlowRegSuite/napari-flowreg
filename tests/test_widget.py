@@ -158,9 +158,14 @@ def test_create_options_dict(make_napari_viewer_proxy):
     # Check options
     assert options["quality_setting"] == "balanced"
     assert options["alpha"] == (1.5, 2.0)  # Non-symmetric
-    assert options["save_w"] == True
+    assert options["save_w"] == False  # Default changed to False
     assert options["verbose"] == True
     assert options["sigma"] == [[1.2, 1.2, 0.3], [1.2, 1.2, 0.3]]
+    
+    # Test with export flow enabled
+    widget.export_flow_check.setChecked(True)
+    options = widget._create_options_dict()
+    assert options["save_w"] == True  # Should be True when checkbox is checked
     
     # Test symmetric smoothness
     widget.symmetric_smooth_check.setChecked(True)

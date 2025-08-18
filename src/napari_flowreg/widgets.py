@@ -453,9 +453,8 @@ class FlowRegWidget(QWidget):
 
             def update_progress(current_frame, total_frames):
                 if not total_frames:
-                    self.progress_max.emit(0)
+                    self.progress_val.emit(0)  # Emit 0 when no frames
                     return
-                self.progress_max.emit(100)
                 self.progress_val.emit(int((current_frame * 100) // total_frames))
             
             worker = self._run_motion_correction(video_array, reference, options_dict, 
