@@ -17,13 +17,13 @@ from napari.layers import Image
 from napari.utils.notifications import show_info, show_error
 from napari.qt.threading import thread_worker
 
+# Check if pyflowreg is available without importing it (to avoid early Numba import)
 try:
-    from pyflowreg.motion_correction.OF_options import OFOptions, QualitySetting
-    from pyflowreg.motion_correction.compensate_arr import compensate_arr
-    PYFLOWREG_AVAILABLE = True
-except ImportError:
+    import importlib.util
+    spec = importlib.util.find_spec("pyflowreg")
+    PYFLOWREG_AVAILABLE = spec is not None
+except (ImportError, ModuleNotFoundError):
     PYFLOWREG_AVAILABLE = False
-    show_error("PyFlowReg not installed. Please install with: pip install pyflowreg")
 
 
 class FlowRegWidget(QWidget):
@@ -236,7 +236,8 @@ class FlowRegWidget(QWidget):
         
     def _on_input_changed(self):
         """Handle input layer selection change."""
-        self._update_layer_lists()
+        # Don't update layer lists here - it causes recursion!
+        # Only update frame limits
         self._update_frame_limits()
         
     def _on_quality_changed(self, quality: str):
@@ -257,6 +258,15 @@ class FlowRegWidget(QWidget):
         
     def _update_layer_lists(self):
         """Update layer combo boxes with current napari layers."""
+        # Block signals to prevent recursion
+        self.input_combo.blockSignals(True)
+        self.ref_layer_combo.blockSignals(True)
+        
+        # Store current selections
+        current_input = self.input_combo.currentText()
+        current_ref = self.ref_layer_combo.currentText()
+        
+        # Clear and update
         self.input_combo.clear()
         self.ref_layer_combo.clear()
         
@@ -265,6 +275,16 @@ class FlowRegWidget(QWidget):
         
         self.input_combo.addItems(image_layers)
         self.ref_layer_combo.addItems(image_layers)
+        
+        # Restore selections if possible
+        if current_input in image_layers:
+            self.input_combo.setCurrentText(current_input)
+        if current_ref in image_layers:
+            self.ref_layer_combo.setCurrentText(current_ref)
+            
+        # Re-enable signals
+        self.input_combo.blockSignals(False)
+        self.ref_layer_combo.blockSignals(False)
         
     def _update_frame_limits(self):
         """Update frame selection limits based on input data."""
@@ -323,55 +343,62 @@ class FlowRegWidget(QWidget):
             
         return reference
         
-    def _create_options(self) -> OFOptions:
-        """Create OFOptions from GUI settings."""
-        # Get quality setting
-        quality_map = {
-            "quality": QualitySetting.QUALITY,
-            "balanced": QualitySetting.BALANCED,
-            "fast": QualitySetting.FAST,
-            "custom": QualitySetting.CUSTOM
-        }
-        quality = quality_map[self.quality_combo.currentText()]
-        
+    def _create_options_dict(self):
+        """Create options dictionary from GUI settings."""
         # Get alpha (smoothness)
         if self.symmetric_smooth_check.isChecked():
             alpha = self.smooth_x.value()
         else:
             alpha = (self.smooth_x.value(), self.smooth_y.value())
             
-        # Create options
-        options = OFOptions(
-            quality_setting=quality,
-            alpha=alpha,
-            save_w=True,  # Save displacement fields
-            output_typename="double",
-            verbose=True
-        )
+        # Build options dict
+        options_dict = {
+            "quality_setting": self.quality_combo.currentText(),
+            "alpha": alpha,
+            "save_w": True,  # Save displacement fields
+            "output_typename": "double",
+            "verbose": True
+        }
         
         # Set custom parameters if needed
-        if quality == QualitySetting.CUSTOM:
-            options.levels = self.levels_spin.value()
-            options.iterations = self.iterations_spin.value()
-            options.eta = self.eta_spin.value()
+        if self.quality_combo.currentText() == "custom":
+            options_dict["levels"] = self.levels_spin.value()
+            options_dict["iterations"] = self.iterations_spin.value()
+            options_dict["eta"] = self.eta_spin.value()
             
         # Set sigma for Gaussian filtering
         sigma_xy = self.sigma_xy.value()
         sigma_t = self.sigma_t.value()
-        options.sigma = [[sigma_xy, sigma_xy, sigma_t], [sigma_xy, sigma_xy, sigma_t]]
+        options_dict["sigma"] = [[sigma_xy, sigma_xy, sigma_t], [sigma_xy, sigma_xy, sigma_t]]
         
         # Set channel weights if multi-channel
         if self.multi_channel_check.isChecked():
-            options.weight = [self.ch1_weight.value(), self.ch2_weight.value()]
+            options_dict["weight"] = [self.ch1_weight.value(), self.ch2_weight.value()]
             
-        return options
+        return options_dict
         
     @thread_worker
     def _run_motion_correction(self, video_array: np.ndarray, 
                               reference: np.ndarray, 
-                              options: OFOptions):
+                              options_dict: dict):
         """Run motion correction in a separate thread."""
         try:
+            # Import pyflowreg inside the worker to avoid Numba import issues
+            from pyflowreg.motion_correction.OF_options import OFOptions, QualitySetting
+            from pyflowreg.motion_correction.compensate_arr import compensate_arr
+            
+            # Map quality string to enum
+            quality_map = {
+                "quality": QualitySetting.QUALITY,
+                "balanced": QualitySetting.BALANCED,
+                "fast": QualitySetting.FAST,
+                "custom": QualitySetting.CUSTOM
+            }
+            
+            # Create OFOptions from dict
+            options_dict["quality_setting"] = quality_map[options_dict["quality_setting"]]
+            options = OFOptions(**options_dict)
+            
             # Run compensation
             registered, flow = compensate_arr(video_array, reference, options)
             return registered, flow
@@ -398,10 +425,10 @@ class FlowRegWidget(QWidget):
             self.log("Getting reference frames...")
             reference = self._get_reference_frames()
             
-            # Create options
+            # Create options dictionary
             self.log("Creating processing options...")
-            options = self._create_options()
-            self.current_options = options
+            options_dict = self._create_options_dict()
+            self.current_options = options_dict
             
             # Update UI
             self.start_button.setEnabled(False)
@@ -414,7 +441,7 @@ class FlowRegWidget(QWidget):
             self.log(f"Video shape: {video_array.shape}")
             self.log(f"Reference shape: {reference.shape}")
             
-            worker = self._run_motion_correction(video_array, reference, options)
+            worker = self._run_motion_correction(video_array, reference, options_dict)
             worker.returned.connect(self._on_correction_complete)
             worker.errored.connect(self._on_correction_error)
             worker.start()

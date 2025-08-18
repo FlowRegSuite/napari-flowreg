@@ -6,8 +6,8 @@ contributions:
   commands:
     - id: napari-flowreg.make_widget
       python_name: napari_flowreg.widgets:FlowRegWidget
-      title: Open FlowReg motion correction widget
+      title: open widget
 
   widgets:
     - command: napari-flowreg.make_widget
-      display_name: FlowReg Motion Correction
+      display_name: Flow-Registration

@@ -3,8 +3,10 @@ name = "napari-flowreg"
 version = "0.0.1-alpha.1"
 description = "napari plugin for Flow-Registration motion correction"
 readme = "README.md"
-license = {text = "BSD-3-Clause"}
-authors = [{name = "FlowReg Team"}]
+authors = [
+    { name="Philipp Flotho", email="Philipp.Flotho@uni-saarland.de" }
+]
+license = { text = "CC BY-NC-SA 4.0" }
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: napari",
