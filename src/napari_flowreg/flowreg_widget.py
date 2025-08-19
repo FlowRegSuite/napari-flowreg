@@ -236,6 +236,14 @@ class FlowRegWidget(QWidget):
         
         layout.addLayout(button_layout)
         
+        # Add visualization toggle button
+        viz_button_layout = QHBoxLayout()
+        self.show_viz_button = QPushButton("Show Flow Visualization")
+        self.show_viz_button.clicked.connect(self._on_show_visualization)
+        viz_button_layout.addWidget(self.show_viz_button)
+        
+        layout.addLayout(viz_button_layout)
+        
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
@@ -487,20 +495,19 @@ class FlowRegWidget(QWidget):
         
         # Optionally add flow field visualization
         if flow is not None and self.export_flow_check.isChecked():
-            # Create flow magnitude for visualization
-            flow_magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
-            # Export flow magnitude as grayscale image
+            # Export the raw flow field (with u,v components)
+            # Store as a regular image layer without channel_axis specification
+            # This preserves the full (T, Y, X, 2) shape for later processing
             self.viewer.add_image(
-                flow_magnitude,
-                name=f"{layer_name}_flow_magnitude",
-                rgb=False,  # Ensure it's treated as grayscale
-                colormap="gray",  # Use grayscale colormap as requested
-                visible=True  # Make visible so user can see it
+                flow,
+                name=f"{layer_name}_flow",
+                rgb=False,  # Not RGB data
+                visible=False  # Hide by default since it's raw flow data
             )
             
-            # TODO: Add proper flow color coding visualization using HSV or quiver plots
-            # This would show both direction and magnitude of the optical flow
-            
+            # Log flow statistics
+            flow_magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+            self.log(f"Flow field shape: {flow.shape}")
             self.log(f"Max displacement: {np.max(flow_magnitude):.2f} pixels")
             self.log(f"Mean displacement: {np.mean(flow_magnitude):.2f} pixels")
         else:
@@ -542,6 +549,28 @@ class FlowRegWidget(QWidget):
         """Load settings from file."""
         # TODO: Implement settings load
         show_info("Settings load not yet implemented")
+        
+    def _on_show_visualization(self):
+        """Show or hide the flow visualization widget."""
+        from napari_flowreg.flow_visualization_widget import FlowVisualizationWidget
+        
+        # Check if visualization widget already exists
+        widget_name = "Flow Visualization"
+        if widget_name in self.viewer.window._dock_widgets:
+            # Toggle visibility
+            dock_widget = self.viewer.window._dock_widgets[widget_name]
+            dock_widget.setVisible(not dock_widget.isVisible())
+            
+            # Update button text
+            if dock_widget.isVisible():
+                self.show_viz_button.setText("Hide Flow Visualization")
+            else:
+                self.show_viz_button.setText("Show Flow Visualization")
+        else:
+            # Create new visualization widget
+            viz_widget = FlowVisualizationWidget(self.viewer)
+            self.viewer.window.add_dock_widget(viz_widget, name=widget_name, area="right")
+            self.show_viz_button.setText("Hide Flow Visualization")
         
     def log(self, message: str):
         """Add message to log."""
