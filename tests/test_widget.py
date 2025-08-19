@@ -10,7 +10,7 @@ from qtpy.QtCore import Qt
 
 def test_widget_creation(make_napari_viewer_proxy):
     """Test that widget can be created and added to viewer."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     
@@ -27,7 +27,7 @@ def test_widget_creation(make_napari_viewer_proxy):
 
 def test_widget_ui_elements(make_napari_viewer_proxy):
     """Test that all expected UI elements are present."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -57,7 +57,7 @@ def test_widget_ui_elements(make_napari_viewer_proxy):
 
 def test_layer_list_updates(make_napari_viewer_proxy, sample_video_2d):
     """Test that layer lists update when layers are added."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -79,7 +79,7 @@ def test_layer_list_updates(make_napari_viewer_proxy, sample_video_2d):
 
 def test_quality_setting_enables_custom_params(make_napari_viewer_proxy):
     """Test that custom parameters are enabled when quality is set to custom."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -110,7 +110,7 @@ def test_quality_setting_enables_custom_params(make_napari_viewer_proxy):
 
 def test_reference_method_enables_controls(make_napari_viewer_proxy):
     """Test that reference controls are enabled based on method."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -139,7 +139,7 @@ def test_reference_method_enables_controls(make_napari_viewer_proxy):
 
 def test_create_options_dict(make_napari_viewer_proxy):
     """Test options dictionary creation from GUI settings."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -175,7 +175,7 @@ def test_create_options_dict(make_napari_viewer_proxy):
 
 def test_get_reference_frames(make_napari_viewer_proxy, sample_video_2d):
     """Test reference frame extraction methods."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -206,7 +206,7 @@ def test_get_reference_frames(make_napari_viewer_proxy, sample_video_2d):
 
 def test_logging(make_napari_viewer_proxy):
     """Test that logging works."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -220,7 +220,7 @@ def test_logging(make_napari_viewer_proxy):
 
 def test_start_button_without_data(make_napari_viewer_proxy):
     """Test start button behavior without data."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -237,7 +237,7 @@ def test_start_button_without_data(make_napari_viewer_proxy):
 @patch('napari_flowreg.widgets.PYFLOWREG_AVAILABLE', False)
 def test_start_without_pyflowreg(make_napari_viewer_proxy):
     """Test start button when pyflowreg is not available."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -252,9 +252,9 @@ def test_start_without_pyflowreg(make_napari_viewer_proxy):
 
 def test_progress_bar_visibility(make_napari_viewer_proxy, sample_video_2d):
     """Test progress bar shows/hides during processing."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     from unittest.mock import MagicMock
-    import napari_flowreg.widgets as widgets_module
+    import napari_flowreg.flowreg_widget as widgets_module
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
@@ -307,7 +307,7 @@ def test_progress_bar_visibility(make_napari_viewer_proxy, sample_video_2d):
 
 def test_button_states_during_processing(make_napari_viewer_proxy):
     """Test button enable/disable states during processing."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)

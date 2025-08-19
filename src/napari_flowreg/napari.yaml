@@ -4,10 +4,10 @@ schema_version: 0.1.0
 
 contributions:
   commands:
-    - id: napari-flowreg.make_widget
-      python_name: napari_flowreg.widgets:FlowRegWidget
+    - id: napari-flowreg.flowreg_widget
+      python_name: napari_flowreg.flowreg_widget:FlowRegWidget
       title: open widget
 
   widgets:
-    - command: napari-flowreg.make_widget
+    - command: napari-flowreg.flowreg_widget
       display_name: Flow-Registration

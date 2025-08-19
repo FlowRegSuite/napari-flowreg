@@ -12,7 +12,7 @@ import time
 
 def test_progress_signal_connection(make_napari_viewer, qtbot):
     """Test that progress signal is properly connected to progress bar."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer
     widget = FlowRegWidget(viewer)
@@ -43,7 +43,7 @@ def test_progress_signal_connection(make_napari_viewer, qtbot):
 
 def test_progress_callback_integration(make_napari_viewer, qtbot):
     """Test progress callback updates through Qt signals during motion correction."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer
     widget = FlowRegWidget(viewer)
@@ -103,7 +103,7 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
 
 def test_progress_callback_thread_safety(make_napari_viewer, qtbot):
     """Test that progress callbacks from worker thread are thread-safe."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer
     widget = FlowRegWidget(viewer)
@@ -148,7 +148,7 @@ def test_progress_callback_thread_safety(make_napari_viewer, qtbot):
 
 def test_progress_bar_reset_after_completion(make_napari_viewer, qtbot):
     """Test that progress bar is properly reset after completion."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer
     widget = FlowRegWidget(viewer)
@@ -168,7 +168,7 @@ def test_progress_bar_reset_after_completion(make_napari_viewer, qtbot):
 
 def test_progress_with_zero_frames(make_napari_viewer, qtbot):
     """Test progress callback handles edge case of zero total frames."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer
     widget = FlowRegWidget(viewer)
@@ -207,7 +207,7 @@ def test_progress_with_zero_frames(make_napari_viewer, qtbot):
 ])
 def test_progress_calculation(make_napari_viewer, qtbot, current, total, expected):
     """Test progress percentage calculation for various frame counts."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     
     viewer = make_napari_viewer
     widget = FlowRegWidget(viewer)

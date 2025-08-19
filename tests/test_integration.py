@@ -139,7 +139,7 @@ def test_widget_with_real_processing(make_napari_viewer_proxy):
         os.environ["NUMBA_DISABLE_INTEL_SVML"] = "1"
         os.environ["NUMBA_CPU_NAME"] = "generic"
         
-        from napari_flowreg.widgets import FlowRegWidget
+        from napari_flowreg.flowreg_widget import FlowRegWidget
         # Delay pyflowreg import
     except ImportError:
         pytest.skip("napari_flowreg not available")
@@ -240,9 +240,9 @@ def test_memory_efficiency():
 @pytest.mark.slow
 def test_error_handling_in_worker():
     """Test that errors in worker are handled gracefully."""
-    from napari_flowreg.widgets import FlowRegWidget
+    from napari_flowreg.flowreg_widget import FlowRegWidget
     from unittest.mock import MagicMock
-    import napari_flowreg.widgets as widgets_module
+    import napari_flowreg.flowreg_widget as widgets_module
     
     # Create a mock viewer
     viewer = MagicMock()

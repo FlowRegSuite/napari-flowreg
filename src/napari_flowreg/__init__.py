@@ -20,6 +20,6 @@ if sys.platform == "win32":
 
 __version__ = "0.0.1-alpha.1"
 
-from .widgets import FlowRegWidget
+from .flowreg_widget import FlowRegWidget
 
 __all__ = ["FlowRegWidget"]
