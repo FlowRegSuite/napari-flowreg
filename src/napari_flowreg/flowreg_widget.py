@@ -236,6 +236,13 @@ class FlowRegWidget(QWidget):
         
         layout.addLayout(button_layout)
         
+        # Add warning about flow field visibility (initially hidden)
+        self.flow_warning = QLabel("Note: Exported flow fields are hidden by default. Use the visualization widget below to view them.")
+        self.flow_warning.setStyleSheet("QLabel { color: #FFA500; }")
+        self.flow_warning.setWordWrap(True)
+        self.flow_warning.setVisible(False)  # Hidden initially
+        layout.addWidget(self.flow_warning)
+        
         # Add visualization toggle button
         viz_button_layout = QHBoxLayout()
         self.show_viz_button = QPushButton("Show Flow Visualization")
@@ -496,14 +503,19 @@ class FlowRegWidget(QWidget):
         # Optionally add flow field visualization
         if flow is not None and self.export_flow_check.isChecked():
             # Export the raw flow field (with u,v components)
-            # Store as a regular image layer without channel_axis specification
-            # This preserves the full (T, Y, X, 2) shape for later processing
+            # Note: This will cause an extra dimension slider in napari because
+            # napari treats all 4 dimensions as spatial/temporal, not as channels.
+            # This is a known napari limitation - it doesn't support 2-channel data
+            # in a single layer with channel control.
             self.viewer.add_image(
                 flow,
                 name=f"{layer_name}_flow",
                 rgb=False,  # Not RGB data
                 visible=False  # Hide by default since it's raw flow data
             )
+            
+            # Show the warning about hidden flow field
+            self.flow_warning.setVisible(True)
             
             # Log flow statistics
             flow_magnitude = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
@@ -539,6 +551,8 @@ class FlowRegWidget(QWidget):
         self.cancel_button.setEnabled(False)
         self.progress_bar.setVisible(False)
         self.progress_bar.setValue(0)
+        # Note: We keep the flow warning visible if it was shown, 
+        # as the flow field is still in the layers
         
     def _on_save_settings(self):
         """Save current settings to file."""
