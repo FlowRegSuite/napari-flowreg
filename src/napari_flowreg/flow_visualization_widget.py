@@ -384,9 +384,28 @@ class FlowVisualizationWidget(QWidget):
             # Import flow_to_color from pyflowreg
             from pyflowreg.util.visualization import flow_to_color
 
-            # Convert flow to HSV color representation
+            # Compute maximum flow magnitude across all frames for consistent visualization
+            # This ensures all frames use the same color scale
+            max_flow_mag = 0.0
+            
+            # Handle different shapes - check if we have multiple frames
+            if flow_data.ndim == 4 and flow_data.shape[-1] == 2:
+                # Shape is (T, H, W, 2) - multiple frames
+                for frame_idx in range(flow_data.shape[0]):
+                    frame_u = flow_data[frame_idx, :, :, 0]
+                    frame_v = flow_data[frame_idx, :, :, 1]
+                    frame_magnitude = np.sqrt(frame_u**2 + frame_v**2)
+                    frame_max = np.max(frame_magnitude)
+                    if frame_max > max_flow_mag:
+                        max_flow_mag = frame_max
+            else:
+                # Single frame or different arrangement
+                magnitude = np.sqrt(u**2 + v**2)
+                max_flow_mag = np.max(magnitude)
+
+            # Convert flow to HSV color representation with consistent max_flow
             # flow_to_color expects (H,W,2) or (T,H,W,2) with u,v in last dimension
-            hsv_image = flow_to_color(flow_data)
+            hsv_image = flow_to_color(flow_data, max_flow=max_flow_mag)
 
             # Compute statistics
             magnitude = np.sqrt(u**2 + v**2)
@@ -402,6 +421,7 @@ class FlowVisualizationWidget(QWidget):
                 f"  Max magnitude:  {max_mag:.3f} pixels\n"
                 f"  Min magnitude:  {min_mag:.3f} pixels\n"
                 f"  Std magnitude:  {std_mag:.3f} pixels\n"
+                f"  Max flow (for consistent scaling): {max_flow_mag:.3f} pixels\n"
                 f"  Hue: Direction, Saturation: Magnitude"
             )
             self.stats_label.setText(stats_text)
