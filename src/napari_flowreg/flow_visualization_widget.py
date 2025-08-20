@@ -9,12 +9,13 @@ from scipy.ndimage import gaussian_filter
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QComboBox, QGridLayout,
-    QSpinBox, QDoubleSpinBox, QCheckBox
+    QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar
 )
 from qtpy.QtCore import Qt, Signal
 from napari.viewer import Viewer
 from napari.layers import Image
 from napari.utils.notifications import show_info, show_error
+from napari.qt.threading import thread_worker
 import warnings
 
 
@@ -70,11 +71,11 @@ class FlowVisualizationWidget(QWidget):
         self.flow_combo.currentTextChanged.connect(self._on_flow_layer_changed)
         layout.addWidget(self.flow_combo, 0, 1)
         
-        # Secondary image dropdown (for future overlay visualization)
+        # Secondary image dropdown (for overlay visualization)
         layout.addWidget(QLabel("Secondary Image:"), 1, 0)
         self.secondary_combo = QComboBox()
-        self.secondary_combo.setEnabled(False)  # Grayed out for now
-        self.secondary_combo.setToolTip("Secondary image for overlay visualization (future feature)")
+        self.secondary_combo.setToolTip("Secondary image for overlay visualization (used in Quiver Plot)")
+        self.secondary_combo.currentTextChanged.connect(self._on_secondary_layer_changed)
         layout.addWidget(self.secondary_combo, 1, 1)
         
         # Info label
@@ -97,8 +98,8 @@ class FlowVisualizationWidget(QWidget):
             "Flow Magnitude",
             "Flow Direction (HSV)",
             "Flow Divergence",
+            "Quiver Plot",
             # Future options to be added:
-            # "Quiver Plot",
             # "Streamlines",
             # "Flow Curl"
         ])
@@ -168,10 +169,10 @@ class FlowVisualizationWidget(QWidget):
         div_layout.addWidget(QLabel("Colormap:"), 2, 0)
         self.div_colormap_combo = QComboBox()
         self.div_colormap_combo.addItems([
-            "coolwarm", "RdBu_r", "seismic", "bwr", 
-            "viridis", "plasma", "twilight", "twilight_shifted"
+            "viridis", "gray", "hot", "jet", "turbo", 
+            "plasma", "inferno", "magma", "twilight"
         ])
-        self.div_colormap_combo.setCurrentText("coolwarm")
+        self.div_colormap_combo.setCurrentText("viridis")
         div_layout.addWidget(self.div_colormap_combo, 2, 1)
         
         # Auto-scale checkbox for divergence
@@ -200,6 +201,42 @@ class FlowVisualizationWidget(QWidget):
         self.div_options_widget.setLayout(div_layout)
         self.div_options_widget.setVisible(False)  # Initially hidden
         layout.addWidget(self.div_options_widget, 2, 0, 1, 2)
+        
+        # Quiver-specific options
+        self.quiver_options_widget = QWidget()
+        quiver_layout = QGridLayout()
+        
+        # Scale control for quiver arrows
+        quiver_layout.addWidget(QLabel("Arrow Scale:"), 0, 0)
+        self.quiver_scale_spin = QDoubleSpinBox()
+        self.quiver_scale_spin.setRange(0.1, 10.0)
+        self.quiver_scale_spin.setSingleStep(0.1)
+        self.quiver_scale_spin.setValue(1.0)
+        self.quiver_scale_spin.setToolTip("Scale factor for quiver arrows (larger = shorter arrows)")
+        quiver_layout.addWidget(self.quiver_scale_spin, 0, 1)
+        
+        # Downsample factor control
+        quiver_layout.addWidget(QLabel("Downsample:"), 1, 0)
+        self.quiver_downsample_spin = QDoubleSpinBox()
+        self.quiver_downsample_spin.setRange(0.01, 0.2)
+        self.quiver_downsample_spin.setSingleStep(0.01)
+        self.quiver_downsample_spin.setValue(0.03)
+        self.quiver_downsample_spin.setToolTip("Downsample factor for arrow density (0.03 = 3% of pixels)")
+        quiver_layout.addWidget(self.quiver_downsample_spin, 1, 1)
+        
+        # Show streamlines checkbox
+        self.show_streamlines_check = QCheckBox("Show streamlines")
+        self.show_streamlines_check.setChecked(True)
+        quiver_layout.addWidget(self.show_streamlines_check, 2, 0, 1, 2)
+        
+        # Secondary image selection info
+        self.quiver_info_label = QLabel("Secondary image will be used as background if selected")
+        self.quiver_info_label.setStyleSheet("QLabel { color: gray; font-size: 10px; }")
+        quiver_layout.addWidget(self.quiver_info_label, 3, 0, 1, 2)
+        
+        self.quiver_options_widget.setLayout(quiver_layout)
+        self.quiver_options_widget.setVisible(False)  # Initially hidden
+        layout.addWidget(self.quiver_options_widget, 3, 0, 1, 2)
         
         group.setLayout(layout)
         return group
@@ -306,21 +343,47 @@ class FlowVisualizationWidget(QWidget):
             self.flow_info_label.setStyleSheet("QLabel { color: red; }")
             self.current_flow_layer = None
             
+    def _on_secondary_layer_changed(self, layer_name: str):
+        """Handle secondary layer selection change."""
+        if not layer_name:
+            self.current_secondary_layer = None
+            return
+            
+        try:
+            layer = self.viewer.layers[layer_name]
+            self.current_secondary_layer = layer
+        except KeyError:
+            self.current_secondary_layer = None
+            
     def _on_viz_type_changed(self, viz_type: str):
         """Handle visualization type change."""
         # Show/hide options based on visualization type
         if viz_type == "Flow Magnitude":
             self.mag_options_widget.setVisible(True)
             self.div_options_widget.setVisible(False)
+            self.quiver_options_widget.setVisible(False)
         elif viz_type == "Flow Direction (HSV)":
             self.mag_options_widget.setVisible(False)
             self.div_options_widget.setVisible(False)
+            self.quiver_options_widget.setVisible(False)
         elif viz_type == "Flow Divergence":
             self.mag_options_widget.setVisible(False)
             self.div_options_widget.setVisible(True)
+            self.quiver_options_widget.setVisible(False)
+        elif viz_type == "Quiver Plot":
+            self.mag_options_widget.setVisible(False)
+            self.div_options_widget.setVisible(False)
+            self.quiver_options_widget.setVisible(True)
+            # Enable secondary image dropdown for quiver
+            self.secondary_combo.setEnabled(True)
         else:
             self.mag_options_widget.setVisible(False)
             self.div_options_widget.setVisible(False)
+            self.quiver_options_widget.setVisible(False)
+        
+        # Disable secondary combo for non-quiver visualizations
+        if viz_type != "Quiver Plot":
+            self.secondary_combo.setEnabled(False)
             
     def _on_autoscale_changed(self, checked: bool):
         """Handle auto-scale checkbox change."""
@@ -350,6 +413,8 @@ class FlowVisualizationWidget(QWidget):
             self._visualize_flow_hsv()
         elif viz_type == "Flow Divergence":
             self._visualize_flow_divergence()
+        elif viz_type == "Quiver Plot":
+            self._visualize_quiver()
         else:
             show_info(f"Visualization type '{viz_type}' not yet implemented")
             
@@ -638,12 +703,247 @@ class FlowVisualizationWidget(QWidget):
             
         show_info(f"Flow divergence visualization created: {layer_name}")
     
+    def _visualize_quiver(self):
+        """Create and display quiver plot visualization."""
+        if self.current_flow_layer is None:
+            show_error("Please select a flow field layer first")
+            return
+            
+        flow_data = self.current_flow_layer.data
+        
+        # Check data shape
+        if flow_data.ndim < 2:
+            show_error("Flow data must be at least 2D")
+            return
+            
+        # Get background image (use secondary if available, otherwise create gray background)
+        if self.current_secondary_layer is not None:
+            bg_image = self.current_secondary_layer.data
+        else:
+            # Create a gray background based on flow shape
+            if flow_data.shape[-1] == 2:
+                bg_shape = flow_data.shape[:-1]
+            else:
+                bg_shape = flow_data.shape[1:3] if flow_data.ndim > 2 else flow_data.shape
+            bg_image = np.ones(bg_shape) * 128  # Mid-gray background
+            
+        # Import quiver_visualization from pyflowreg
+        try:
+            from pyflowreg.util.visualization import quiver_visualization
+        except ImportError as e:
+            show_error(f"Could not import quiver_visualization from pyflowreg: {str(e)}")
+            return
+            
+        # Get parameters
+        scale = self.quiver_scale_spin.value()
+        downsample = self.quiver_downsample_spin.value()
+        show_streamlines = self.show_streamlines_check.isChecked()
+        
+        # Handle different flow data shapes
+        if flow_data.shape[-1] == 2:
+            # Assume last dimension is [u, v] components
+            flow = flow_data
+        elif flow_data.ndim == 3 and flow_data.shape[0] == 2:
+            # Assume first dimension is [u, v] components (2, H, W)
+            # Transpose to (H, W, 2)
+            flow = np.transpose(flow_data, (1, 2, 0))
+        else:
+            show_error(f"Cannot interpret flow data with shape {flow_data.shape}")
+            return
+            
+        # Check if we have video data
+        if flow.ndim == 4:  # (T, H, W, 2)
+            # Process frame by frame with progress
+            n_frames = flow.shape[0]
+            
+            # Create progress bar widget
+            progress_bar = QProgressBar()
+            progress_bar.setRange(0, n_frames)
+            progress_bar.setFormat("Processing frame %v of %m")
+            
+            # Add progress bar to the UI temporarily
+            self.layout().addWidget(progress_bar)
+            progress_bar.show()
+            
+            # Process frames
+            quiver_frames = []
+            
+            @thread_worker
+            def process_frames():
+                """Process frames in a worker thread."""
+                frames_result = []
+                for t in range(n_frames):
+                    # Get the current frame's flow
+                    frame_flow = flow[t]
+                    
+                    # Get background frame if video
+                    if bg_image.ndim == 3:
+                        frame_bg = bg_image[t] if t < bg_image.shape[0] else bg_image[-1]
+                    else:
+                        frame_bg = bg_image
+                        
+                    # Create modified quiver visualization for napari
+                    # We'll create our own simplified version that doesn't use matplotlib
+                    quiver_img = self._create_quiver_frame(
+                        frame_bg, frame_flow, scale, downsample, show_streamlines
+                    )
+                    frames_result.append(quiver_img)
+                    
+                    yield t + 1  # Yield progress
+                    
+                return np.array(frames_result)
+                
+            # Connect worker
+            worker = process_frames()
+            worker.yielded.connect(progress_bar.setValue)
+            
+            def on_finished(result):
+                # Remove progress bar
+                self.layout().removeWidget(progress_bar)
+                progress_bar.deleteLater()
+                
+                # Add result to viewer
+                layer_name = f"{self.current_flow_layer.name}_quiver"
+                
+                if layer_name in self.viewer.layers:
+                    self.viewer.layers[layer_name].data = result
+                else:
+                    self.viewer.add_image(
+                        result,
+                        name=layer_name,
+                        rgb=True,
+                        visible=True
+                    )
+                    
+                show_info(f"Quiver visualization created: {layer_name}")
+                
+            worker.returned.connect(on_finished)  # Use returned signal, not finished
+            worker.start()
+            
+        else:
+            # Single frame
+            # Get background
+            if bg_image.ndim == 3 and bg_image.shape[0] > 1:
+                # If bg is video, use first frame
+                frame_bg = bg_image[0]
+            else:
+                frame_bg = bg_image
+                
+            # Create quiver visualization
+            quiver_img = self._create_quiver_frame(
+                frame_bg, flow, scale, downsample, show_streamlines
+            )
+            
+            # Add to viewer
+            layer_name = f"{self.current_flow_layer.name}_quiver"
+            
+            if layer_name in self.viewer.layers:
+                self.viewer.layers[layer_name].data = quiver_img
+            else:
+                self.viewer.add_image(
+                    quiver_img,
+                    name=layer_name,
+                    rgb=True,
+                    visible=True
+                )
+                
+            show_info(f"Quiver visualization created: {layer_name}")
+            
+    def _create_quiver_frame(self, img, flow, scale, downsample, show_streamlines):
+        """Create a single quiver visualization frame without matplotlib."""
+        import cv2
+        
+        # Ensure correct shapes
+        if img.ndim == 2:
+            img = img[:, :, np.newaxis]
+            
+        h, w, n_channels = img.shape
+        
+        # Prepare background image
+        if n_channels == 1:
+            # Grayscale to RGB
+            img_rgb = np.stack([img[:, :, 0]] * 3, axis=-1)
+        elif n_channels == 2:
+            # Use flow_to_color for 2-channel
+            from pyflowreg.util.visualization import get_visualization
+            img_rgb = get_visualization(img[:, :, 0], img[:, :, 1])
+        elif n_channels == 3:
+            img_rgb = img.copy()
+        else:
+            # Use first 3 channels
+            img_rgb = img[:, :, :3].copy()
+            
+        # Normalize to 0-255 range
+        if img_rgb.max() <= 1.0:
+            img_rgb = (img_rgb * 255).astype(np.uint8)
+        else:
+            img_rgb = img_rgb.astype(np.uint8)
+            
+        # Create a copy for drawing
+        result = img_rgb.copy()
+        
+        # Downsample for quiver
+        new_h = max(2, int(h * downsample))
+        new_w = max(2, int(w * downsample))
+        
+        # Create sampling grid
+        y_indices = np.linspace(0, h-1, new_h, dtype=int)
+        x_indices = np.linspace(0, w-1, new_w, dtype=int)
+        
+        # Draw arrows
+        arrow_scale = 1.0 / scale
+        for i, y in enumerate(y_indices):
+            for j, x in enumerate(x_indices):
+                u = flow[y, x, 0] * arrow_scale
+                v = flow[y, x, 1] * arrow_scale
+                
+                # Skip very small displacements
+                if abs(u) < 0.5 and abs(v) < 0.5:
+                    continue
+                    
+                # Draw arrow
+                start_point = (int(x), int(y))
+                end_point = (int(x + u), int(y + v))
+                
+                # Draw arrow line
+                cv2.arrowedLine(
+                    result,
+                    start_point,
+                    end_point,
+                    color=(255, 255, 255),  # White arrows
+                    thickness=1,
+                    tipLength=0.2
+                )
+                
+                # Optional: Add black outline for visibility
+                cv2.arrowedLine(
+                    result,
+                    start_point,
+                    end_point,
+                    color=(0, 0, 0),  # Black outline
+                    thickness=2,
+                    tipLength=0.2,
+                    line_type=cv2.LINE_AA
+                )
+                cv2.arrowedLine(
+                    result,
+                    start_point,
+                    end_point,
+                    color=(255, 255, 255),  # White center
+                    thickness=1,
+                    tipLength=0.2,
+                    line_type=cv2.LINE_AA
+                )
+                
+        return result
+    
     def _on_clear_clicked(self):
         """Clear visualization layers."""
         # Remove any visualization layers we created
         layers_to_remove = []
         for layer in self.viewer.layers:
-            if "_magnitude" in layer.name or "_hsv" in layer.name or "_divergence" in layer.name:
+            if ("_magnitude" in layer.name or "_hsv" in layer.name or 
+                "_divergence" in layer.name or "_quiver" in layer.name):
                 layers_to_remove.append(layer.name)
                 
         for layer_name in layers_to_remove:
