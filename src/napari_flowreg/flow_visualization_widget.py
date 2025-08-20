@@ -5,6 +5,7 @@ Provides visualization tools for optical flow fields
 
 from typing import Optional, List
 import numpy as np
+from scipy.ndimage import gaussian_filter
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QComboBox, QGridLayout,
@@ -95,10 +96,10 @@ class FlowVisualizationWidget(QWidget):
         self.viz_type_combo.addItems([
             "Flow Magnitude",
             "Flow Direction (HSV)",
+            "Flow Divergence",
             # Future options to be added:
             # "Quiver Plot",
             # "Streamlines",
-            # "Flow Divergence",
             # "Flow Curl"
         ])
         self.viz_type_combo.currentTextChanged.connect(self._on_viz_type_changed)
@@ -143,6 +144,62 @@ class FlowVisualizationWidget(QWidget):
         
         self.mag_options_widget.setLayout(mag_layout)
         layout.addWidget(self.mag_options_widget, 1, 0, 1, 2)
+        
+        # Divergence-specific options
+        self.div_options_widget = QWidget()
+        div_layout = QGridLayout()
+        
+        # Gaussian smoothing checkbox
+        self.smooth_check = QCheckBox("Apply Gaussian smoothing")
+        self.smooth_check.setChecked(True)
+        self.smooth_check.toggled.connect(self._on_smooth_changed)
+        div_layout.addWidget(self.smooth_check, 0, 0, 1, 2)
+        
+        # Sigma control for Gaussian filter
+        div_layout.addWidget(QLabel("Sigma:"), 1, 0)
+        self.sigma_spin = QDoubleSpinBox()
+        self.sigma_spin.setRange(0.1, 50.0)
+        self.sigma_spin.setSingleStep(0.5)
+        self.sigma_spin.setValue(10.0)
+        self.sigma_spin.setToolTip("Standard deviation for Gaussian smoothing")
+        div_layout.addWidget(self.sigma_spin, 1, 1)
+        
+        # Colormap selection for divergence
+        div_layout.addWidget(QLabel("Colormap:"), 2, 0)
+        self.div_colormap_combo = QComboBox()
+        self.div_colormap_combo.addItems([
+            "coolwarm", "RdBu_r", "seismic", "bwr", 
+            "viridis", "plasma", "twilight", "twilight_shifted"
+        ])
+        self.div_colormap_combo.setCurrentText("coolwarm")
+        div_layout.addWidget(self.div_colormap_combo, 2, 1)
+        
+        # Auto-scale checkbox for divergence
+        self.div_autoscale_check = QCheckBox("Auto-scale")
+        self.div_autoscale_check.setChecked(True)
+        self.div_autoscale_check.toggled.connect(self._on_div_autoscale_changed)
+        div_layout.addWidget(self.div_autoscale_check, 3, 0)
+        
+        # Manual scale controls for divergence
+        div_layout.addWidget(QLabel("Min:"), 4, 0)
+        self.div_scale_min_spin = QDoubleSpinBox()
+        self.div_scale_min_spin.setRange(-100, 100)
+        self.div_scale_min_spin.setSingleStep(0.1)
+        self.div_scale_min_spin.setValue(-1)
+        self.div_scale_min_spin.setEnabled(False)
+        div_layout.addWidget(self.div_scale_min_spin, 4, 1)
+        
+        div_layout.addWidget(QLabel("Max:"), 5, 0)
+        self.div_scale_max_spin = QDoubleSpinBox()
+        self.div_scale_max_spin.setRange(-100, 100)
+        self.div_scale_max_spin.setSingleStep(0.1)
+        self.div_scale_max_spin.setValue(1)
+        self.div_scale_max_spin.setEnabled(False)
+        div_layout.addWidget(self.div_scale_max_spin, 5, 1)
+        
+        self.div_options_widget.setLayout(div_layout)
+        self.div_options_widget.setVisible(False)  # Initially hidden
+        layout.addWidget(self.div_options_widget, 2, 0, 1, 2)
         
         group.setLayout(layout)
         return group
@@ -254,15 +311,30 @@ class FlowVisualizationWidget(QWidget):
         # Show/hide options based on visualization type
         if viz_type == "Flow Magnitude":
             self.mag_options_widget.setVisible(True)
+            self.div_options_widget.setVisible(False)
         elif viz_type == "Flow Direction (HSV)":
             self.mag_options_widget.setVisible(False)
+            self.div_options_widget.setVisible(False)
+        elif viz_type == "Flow Divergence":
+            self.mag_options_widget.setVisible(False)
+            self.div_options_widget.setVisible(True)
         else:
             self.mag_options_widget.setVisible(False)
+            self.div_options_widget.setVisible(False)
             
     def _on_autoscale_changed(self, checked: bool):
         """Handle auto-scale checkbox change."""
         self.scale_min_spin.setEnabled(not checked)
         self.scale_max_spin.setEnabled(not checked)
+        
+    def _on_div_autoscale_changed(self, checked: bool):
+        """Handle divergence auto-scale checkbox change."""
+        self.div_scale_min_spin.setEnabled(not checked)
+        self.div_scale_max_spin.setEnabled(not checked)
+        
+    def _on_smooth_changed(self, checked: bool):
+        """Handle smooth checkbox change."""
+        self.sigma_spin.setEnabled(checked)
         
     def _on_visualize_clicked(self):
         """Generate and display the visualization."""
@@ -276,6 +348,8 @@ class FlowVisualizationWidget(QWidget):
             self._visualize_flow_magnitude()
         elif viz_type == "Flow Direction (HSV)":
             self._visualize_flow_hsv()
+        elif viz_type == "Flow Divergence":
+            self._visualize_flow_divergence()
         else:
             show_info(f"Visualization type '{viz_type}' not yet implemented")
             
@@ -449,12 +523,127 @@ class FlowVisualizationWidget(QWidget):
         except Exception as e:
             show_error(f"Error creating HSV visualization: {str(e)}")
     
+    def _visualize_flow_divergence(self):
+        """Create and display flow divergence visualization."""
+        if self.current_flow_layer is None:
+            return
+            
+        flow_data = self.current_flow_layer.data
+        
+        # Check data shape
+        if flow_data.ndim < 2:
+            show_error("Flow data must be at least 2D")
+            return
+            
+        # Handle different data shapes
+        if flow_data.shape[-1] == 2:
+            # Assume last dimension is [u, v] components
+            u = flow_data[..., 0]
+            v = flow_data[..., 1]
+        elif flow_data.ndim == 3 and flow_data.shape[0] == 2:
+            # Assume first dimension is [u, v] components (2, H, W)
+            u = flow_data[0]
+            v = flow_data[1]
+        else:
+            show_error(f"Cannot interpret flow data with shape {flow_data.shape}. "
+                      f"Expected (..., 2) for [u,v] components")
+            return
+        
+        # Apply Gaussian smoothing if requested
+        if self.smooth_check.isChecked():
+            sigma = self.sigma_spin.value()
+            
+            # Handle video data (T, H, W, 2) or (T, H, W) for u,v separately
+            if u.ndim == 3:  # Video with T frames
+                # Create smoothed arrays
+                u_smooth = np.zeros_like(u)
+                v_smooth = np.zeros_like(v)
+                
+                # Apply Gaussian filter frame by frame
+                for t in range(u.shape[0]):
+                    u_smooth[t] = gaussian_filter(u[t], sigma=sigma)
+                    v_smooth[t] = gaussian_filter(v[t], sigma=sigma)
+                    
+                u = u_smooth
+                v = v_smooth
+            else:  # Single frame
+                u = gaussian_filter(u, sigma=sigma)
+                v = gaussian_filter(v, sigma=sigma)
+        
+        # Compute divergence using finite differences
+        # divergence = ∂u/∂x + ∂v/∂y
+        if u.ndim == 3:  # Video (T, H, W)
+            divergence = np.zeros_like(u)
+            for t in range(u.shape[0]):
+                # Compute gradients for each frame
+                du_dx = np.gradient(u[t], axis=1)  # ∂u/∂x (x is axis 1)
+                dv_dy = np.gradient(v[t], axis=0)  # ∂v/∂y (y is axis 0)
+                divergence[t] = du_dx + dv_dy
+        else:  # Single frame
+            du_dx = np.gradient(u, axis=1)  # ∂u/∂x (x is axis 1)
+            dv_dy = np.gradient(v, axis=0)  # ∂v/∂y (y is axis 0)
+            divergence = du_dx + dv_dy
+        
+        # Compute statistics
+        mean_div = np.mean(divergence)
+        max_div = np.max(divergence)
+        min_div = np.min(divergence)
+        std_div = np.std(divergence)
+        abs_mean_div = np.mean(np.abs(divergence))
+        
+        # Update statistics display
+        stats_text = (
+            f"Flow Divergence Statistics:\n"
+            f"  Mean: {mean_div:.6f}\n"
+            f"  Max:  {max_div:.6f}\n"
+            f"  Min:  {min_div:.6f}\n"
+            f"  Std:  {std_div:.6f}\n"
+            f"  Mean |div|: {abs_mean_div:.6f}\n"
+        )
+        if self.smooth_check.isChecked():
+            stats_text += f"  Gaussian σ: {sigma:.1f} pixels\n"
+        stats_text += "  Positive: expansion, Negative: contraction"
+        self.stats_label.setText(stats_text)
+        
+        # Determine contrast limits
+        if self.div_autoscale_check.isChecked():
+            # Use symmetric limits around zero for divergence
+            max_abs = max(abs(min_div), abs(max_div))
+            if max_abs > 0:
+                contrast_limits = [-max_abs, max_abs]
+            else:
+                contrast_limits = None
+        else:
+            contrast_limits = [self.div_scale_min_spin.value(), self.div_scale_max_spin.value()]
+            
+        # Add divergence layer to viewer
+        layer_name = f"{self.current_flow_layer.name}_divergence"
+        
+        # Check if layer already exists
+        if layer_name in self.viewer.layers:
+            # Update existing layer
+            self.viewer.layers[layer_name].data = divergence
+            if contrast_limits:
+                self.viewer.layers[layer_name].contrast_limits = contrast_limits
+            self.viewer.layers[layer_name].colormap = self.div_colormap_combo.currentText()
+        else:
+            # Create new layer
+            self.viewer.add_image(
+                divergence,
+                name=layer_name,
+                colormap=self.div_colormap_combo.currentText(),
+                contrast_limits=contrast_limits,
+                visible=True
+            )
+            
+        show_info(f"Flow divergence visualization created: {layer_name}")
+    
     def _on_clear_clicked(self):
         """Clear visualization layers."""
         # Remove any visualization layers we created
         layers_to_remove = []
         for layer in self.viewer.layers:
-            if "_magnitude" in layer.name or "_hsv" in layer.name:
+            if "_magnitude" in layer.name or "_hsv" in layer.name or "_divergence" in layer.name:
                 layers_to_remove.append(layer.name)
                 
         for layer_name in layers_to_remove:

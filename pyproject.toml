@@ -23,6 +23,7 @@ dependencies = [
     "pyflowreg",
     "qtpy",
     "numpy",
+    "scipy",
     "magicgui>=0.8.0",
 ]
 
