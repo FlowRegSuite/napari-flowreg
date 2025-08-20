@@ -766,8 +766,6 @@ class FlowVisualizationWidget(QWidget):
             progress_bar.show()
             
             # Process frames
-            quiver_frames = []
-            
             @thread_worker
             def process_frames():
                 """Process frames in a worker thread."""
@@ -782,10 +780,15 @@ class FlowVisualizationWidget(QWidget):
                     else:
                         frame_bg = bg_image
                         
-                    # Create modified quiver visualization for napari
-                    # We'll create our own simplified version that doesn't use matplotlib
-                    quiver_img = self._create_quiver_frame(
-                        frame_bg, frame_flow, scale, downsample, show_streamlines
+                    # Use pyflowreg's quiver_visualization with new parameters
+                    quiver_img = quiver_visualization(
+                        frame_bg, 
+                        frame_flow, 
+                        scale=scale,
+                        downsample=downsample,
+                        show_streamlines=show_streamlines,
+                        backend="matplotlib",  # Use matplotlib as default for testing
+                        return_array=True
                     )
                     frames_result.append(quiver_img)
                     
@@ -829,9 +832,15 @@ class FlowVisualizationWidget(QWidget):
             else:
                 frame_bg = bg_image
                 
-            # Create quiver visualization
-            quiver_img = self._create_quiver_frame(
-                frame_bg, flow, scale, downsample, show_streamlines
+            # Use pyflowreg's quiver_visualization with new parameters
+            quiver_img = quiver_visualization(
+                frame_bg, 
+                flow, 
+                scale=scale,
+                downsample=downsample,
+                show_streamlines=show_streamlines,
+                backend="matplotlib",  # Use matplotlib as default for testing
+                return_array=True
             )
             
             # Add to viewer
@@ -848,94 +857,6 @@ class FlowVisualizationWidget(QWidget):
                 )
                 
             show_info(f"Quiver visualization created: {layer_name}")
-            
-    def _create_quiver_frame(self, img, flow, scale, downsample, show_streamlines):
-        """Create a single quiver visualization frame without matplotlib."""
-        import cv2
-        
-        # Ensure correct shapes
-        if img.ndim == 2:
-            img = img[:, :, np.newaxis]
-            
-        h, w, n_channels = img.shape
-        
-        # Prepare background image
-        if n_channels == 1:
-            # Grayscale to RGB
-            img_rgb = np.stack([img[:, :, 0]] * 3, axis=-1)
-        elif n_channels == 2:
-            # Use flow_to_color for 2-channel
-            from pyflowreg.util.visualization import get_visualization
-            img_rgb = get_visualization(img[:, :, 0], img[:, :, 1])
-        elif n_channels == 3:
-            img_rgb = img.copy()
-        else:
-            # Use first 3 channels
-            img_rgb = img[:, :, :3].copy()
-            
-        # Normalize to 0-255 range
-        if img_rgb.max() <= 1.0:
-            img_rgb = (img_rgb * 255).astype(np.uint8)
-        else:
-            img_rgb = img_rgb.astype(np.uint8)
-            
-        # Create a copy for drawing
-        result = img_rgb.copy()
-        
-        # Downsample for quiver
-        new_h = max(2, int(h * downsample))
-        new_w = max(2, int(w * downsample))
-        
-        # Create sampling grid
-        y_indices = np.linspace(0, h-1, new_h, dtype=int)
-        x_indices = np.linspace(0, w-1, new_w, dtype=int)
-        
-        # Draw arrows
-        arrow_scale = 1.0 / scale
-        for i, y in enumerate(y_indices):
-            for j, x in enumerate(x_indices):
-                u = flow[y, x, 0] * arrow_scale
-                v = flow[y, x, 1] * arrow_scale
-                
-                # Skip very small displacements
-                if abs(u) < 0.5 and abs(v) < 0.5:
-                    continue
-                    
-                # Draw arrow
-                start_point = (int(x), int(y))
-                end_point = (int(x + u), int(y + v))
-                
-                # Draw arrow line
-                cv2.arrowedLine(
-                    result,
-                    start_point,
-                    end_point,
-                    color=(255, 255, 255),  # White arrows
-                    thickness=1,
-                    tipLength=0.2
-                )
-                
-                # Optional: Add black outline for visibility
-                cv2.arrowedLine(
-                    result,
-                    start_point,
-                    end_point,
-                    color=(0, 0, 0),  # Black outline
-                    thickness=2,
-                    tipLength=0.2,
-                    line_type=cv2.LINE_AA
-                )
-                cv2.arrowedLine(
-                    result,
-                    start_point,
-                    end_point,
-                    color=(255, 255, 255),  # White center
-                    thickness=1,
-                    tipLength=0.2,
-                    line_type=cv2.LINE_AA
-                )
-                
-        return result
     
     def _on_clear_clicked(self):
         """Clear visualization layers."""
