@@ -94,8 +94,8 @@ class FlowVisualizationWidget(QWidget):
         self.viz_type_combo = QComboBox()
         self.viz_type_combo.addItems([
             "Flow Magnitude",
+            "Flow Direction (HSV)",
             # Future options to be added:
-            # "Flow Direction (HSV)",
             # "Quiver Plot",
             # "Streamlines",
             # "Flow Divergence",
@@ -251,9 +251,11 @@ class FlowVisualizationWidget(QWidget):
             
     def _on_viz_type_changed(self, viz_type: str):
         """Handle visualization type change."""
-        # For now, only flow magnitude is implemented
+        # Show/hide options based on visualization type
         if viz_type == "Flow Magnitude":
             self.mag_options_widget.setVisible(True)
+        elif viz_type == "Flow Direction (HSV)":
+            self.mag_options_widget.setVisible(False)
         else:
             self.mag_options_widget.setVisible(False)
             
@@ -272,6 +274,8 @@ class FlowVisualizationWidget(QWidget):
         
         if viz_type == "Flow Magnitude":
             self._visualize_flow_magnitude()
+        elif viz_type == "Flow Direction (HSV)":
+            self._visualize_flow_hsv()
         else:
             show_info(f"Visualization type '{viz_type}' not yet implemented")
             
@@ -349,12 +353,88 @@ class FlowVisualizationWidget(QWidget):
             
         show_info(f"Flow magnitude visualization created: {layer_name}")
         
+    def _visualize_flow_hsv(self):
+        """Create and display flow direction visualization using HSV color coding."""
+        if self.current_flow_layer is None:
+            return
+            
+        flow_data = self.current_flow_layer.data
+        
+        # Check data shape
+        if flow_data.ndim < 2:
+            show_error("Flow data must be at least 2D")
+            return
+            
+        # Handle different data shapes
+        if flow_data.shape[-1] == 2:
+            # Assume last dimension is [u, v] components
+            u = flow_data[..., 0]
+            v = flow_data[..., 1]
+        elif flow_data.ndim == 3 and flow_data.shape[0] == 2:
+            # Assume first dimension is [u, v] components
+            u = flow_data[0]
+            v = flow_data[1]
+        else:
+            # Try to interpret as single component or warn
+            show_error(f"Cannot interpret flow data with shape {flow_data.shape}. "
+                      f"Expected (..., 2) for [u,v] components")
+            return
+            
+        try:
+            # Import flow_to_color from pyflowreg
+            from pyflowreg.util.visualization import flow_to_color
+
+            # Convert flow to HSV color representation
+            # flow_to_color expects (H,W,2) or (T,H,W,2) with u,v in last dimension
+            hsv_image = flow_to_color(flow_data)
+
+            # Compute statistics
+            magnitude = np.sqrt(u**2 + v**2)
+            mean_mag = np.mean(magnitude)
+            max_mag = np.max(magnitude)
+            min_mag = np.min(magnitude)
+            std_mag = np.std(magnitude)
+
+            # Update statistics display
+            stats_text = (
+                f"Flow Direction (HSV) Statistics:\n"
+                f"  Mean magnitude: {mean_mag:.3f} pixels\n"
+                f"  Max magnitude:  {max_mag:.3f} pixels\n"
+                f"  Min magnitude:  {min_mag:.3f} pixels\n"
+                f"  Std magnitude:  {std_mag:.3f} pixels\n"
+                f"  Hue: Direction, Saturation: Magnitude"
+            )
+            self.stats_label.setText(stats_text)
+
+            # Add HSV layer to viewer
+            layer_name = f"{self.current_flow_layer.name}_hsv"
+
+            # Check if layer already exists
+            if layer_name in self.viewer.layers:
+                # Update existing layer
+                self.viewer.layers[layer_name].data = hsv_image
+            else:
+                # Create new layer - HSV image is RGB
+                self.viewer.add_image(
+                    hsv_image,
+                    name=layer_name,
+                    rgb=True,  # HSV is converted to RGB by flow_to_color
+                    visible=True
+                )
+
+            show_info(f"Flow direction (HSV) visualization created: {layer_name}")
+            
+        except ImportError as e:
+            show_error(f"Could not import flow_to_color from pyflowreg. Please ensure pyflowreg is installed: {str(e)}")
+        except Exception as e:
+            show_error(f"Error creating HSV visualization: {str(e)}")
+    
     def _on_clear_clicked(self):
         """Clear visualization layers."""
-        # Remove any magnitude layers we created
+        # Remove any visualization layers we created
         layers_to_remove = []
         for layer in self.viewer.layers:
-            if "_magnitude" in layer.name:
+            if "_magnitude" in layer.name or "_hsv" in layer.name:
                 layers_to_remove.append(layer.name)
                 
         for layer_name in layers_to_remove:

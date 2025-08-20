@@ -507,6 +507,7 @@ class FlowRegWidget(QWidget):
             # napari treats all 4 dimensions as spatial/temporal, not as channels.
             # This is a known napari limitation - it doesn't support 2-channel data
             # in a single layer with channel control.
+
             self.viewer.add_image(
                 flow,
                 name=f"{layer_name}_flow",
