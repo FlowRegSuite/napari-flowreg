@@ -9,7 +9,8 @@ from scipy.ndimage import gaussian_filter
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QComboBox, QGridLayout,
-    QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar
+    QSpinBox, QDoubleSpinBox, QCheckBox, QProgressBar,
+    QColorDialog
 )
 from qtpy.QtCore import Qt, Signal
 from napari.viewer import Viewer
@@ -229,10 +230,36 @@ class FlowVisualizationWidget(QWidget):
         self.show_streamlines_check.setChecked(True)
         quiver_layout.addWidget(self.show_streamlines_check, 2, 0, 1, 2)
         
+        # Quiver arrow color picker
+        quiver_layout.addWidget(QLabel("Arrow Color:"), 3, 0)
+        self.quiver_color_btn = QPushButton()
+        self.quiver_color_btn.setStyleSheet("background-color: white; border: 1px solid black;")
+        self.quiver_color_btn.setFixedSize(50, 25)
+        self.quiver_color_btn.clicked.connect(self._pick_quiver_color)
+        self.quiver_color = (255, 255, 255)  # Default white
+        quiver_layout.addWidget(self.quiver_color_btn, 3, 1)
+        
+        # Streamline color picker
+        quiver_layout.addWidget(QLabel("Streamline Color:"), 4, 0)
+        self.streamline_color_btn = QPushButton()
+        self.streamline_color_btn.setStyleSheet("background-color: black; border: 1px solid gray;")
+        self.streamline_color_btn.setFixedSize(50, 25)
+        self.streamline_color_btn.clicked.connect(self._pick_streamline_color)
+        self.streamline_color = (0, 0, 0)  # Default black
+        quiver_layout.addWidget(self.streamline_color_btn, 4, 1)
+        
+        # Backend selector
+        quiver_layout.addWidget(QLabel("Backend:"), 5, 0)
+        self.backend_combo = QComboBox()
+        self.backend_combo.addItems(["matplotlib", "opencv"])
+        self.backend_combo.setCurrentText("matplotlib")  # Default to matplotlib
+        self.backend_combo.setToolTip("Choose visualization backend")
+        quiver_layout.addWidget(self.backend_combo, 5, 1)
+        
         # Secondary image selection info
         self.quiver_info_label = QLabel("Secondary image will be used as background if selected")
         self.quiver_info_label.setStyleSheet("QLabel { color: gray; font-size: 10px; }")
-        quiver_layout.addWidget(self.quiver_info_label, 3, 0, 1, 2)
+        quiver_layout.addWidget(self.quiver_info_label, 6, 0, 1, 2)
         
         self.quiver_options_widget.setLayout(quiver_layout)
         self.quiver_options_widget.setVisible(False)  # Initially hidden
@@ -334,6 +361,16 @@ class FlowVisualizationWidget(QWidget):
                 self.flow_info_label.setStyleSheet("QLabel { color: orange; }")
                 
             self.flow_info_label.setText(info_text)
+            
+            # Auto-select the unregistered version as secondary image if it exists
+            if "_flow" in layer_name:
+                # Try to find the corresponding unregistered image
+                base_name = layer_name.replace("_flow", "")
+                if base_name in self.viewer.layers:
+                    # Set the secondary combo to the unregistered version
+                    index = self.secondary_combo.findText(base_name)
+                    if index >= 0:
+                        self.secondary_combo.setCurrentIndex(index)
             
             # Emit signal
             self.flow_layer_changed.emit(layer_name)
@@ -725,7 +762,7 @@ class FlowVisualizationWidget(QWidget):
                 bg_shape = flow_data.shape[:-1]
             else:
                 bg_shape = flow_data.shape[1:3] if flow_data.ndim > 2 else flow_data.shape
-            bg_image = np.ones(bg_shape) * 128  # Mid-gray background
+            bg_image = np.ones(bg_shape) * 0.5  # Mid-gray background (0-1 range)
             
         # Import quiver_visualization from pyflowreg
         try:
@@ -738,6 +775,9 @@ class FlowVisualizationWidget(QWidget):
         scale = self.quiver_scale_spin.value()
         downsample = self.quiver_downsample_spin.value()
         show_streamlines = self.show_streamlines_check.isChecked()
+        backend = self.backend_combo.currentText()
+        quiver_color = self.quiver_color
+        streamline_color = self.streamline_color
         
         # Handle different flow data shapes
         if flow_data.shape[-1] == 2:
@@ -787,8 +827,10 @@ class FlowVisualizationWidget(QWidget):
                         scale=scale,
                         downsample=downsample,
                         show_streamlines=show_streamlines,
-                        backend="matplotlib",  # Use matplotlib as default for testing
-                        return_array=True
+                        backend=backend,
+                        return_array=True,
+                        quiver_color=quiver_color,
+                        streamline_color=streamline_color
                     )
                     frames_result.append(quiver_img)
                     
@@ -839,8 +881,10 @@ class FlowVisualizationWidget(QWidget):
                 scale=scale,
                 downsample=downsample,
                 show_streamlines=show_streamlines,
-                backend="matplotlib",  # Use matplotlib as default for testing
-                return_array=True
+                backend=backend,
+                return_array=True,
+                quiver_color=quiver_color,
+                streamline_color=streamline_color
             )
             
             # Add to viewer
@@ -857,6 +901,26 @@ class FlowVisualizationWidget(QWidget):
                 )
                 
             show_info(f"Quiver visualization created: {layer_name}")
+    
+    def _pick_quiver_color(self):
+        """Open color picker for quiver arrow color."""
+        color = QColorDialog.getColor(Qt.white, self, "Select Quiver Arrow Color")
+        if color.isValid():
+            self.quiver_color = (color.red(), color.green(), color.blue())
+            self.quiver_color_btn.setStyleSheet(
+                f"background-color: rgb({color.red()}, {color.green()}, {color.blue()}); "
+                f"border: 1px solid black;"
+            )
+    
+    def _pick_streamline_color(self):
+        """Open color picker for streamline color."""
+        color = QColorDialog.getColor(Qt.black, self, "Select Streamline Color")
+        if color.isValid():
+            self.streamline_color = (color.red(), color.green(), color.blue())
+            self.streamline_color_btn.setStyleSheet(
+                f"background-color: rgb({color.red()}, {color.green()}, {color.blue()}); "
+                f"border: 1px solid gray;"
+            )
     
     def _on_clear_clicked(self):
         """Clear visualization layers."""
