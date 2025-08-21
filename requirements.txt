@@ -1,2 +1,4 @@
 pyflowreg
 napari
+matplotlib>=3.5.0
+scipy>=1.10.0

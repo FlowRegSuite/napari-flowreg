@@ -243,11 +243,15 @@ class FlowRegWidget(QWidget):
         self.flow_warning.setVisible(False)  # Hidden initially
         layout.addWidget(self.flow_warning)
         
-        # Add visualization toggle button
+        # Add visualization and analysis toggle buttons
         viz_button_layout = QHBoxLayout()
         self.show_viz_button = QPushButton("Show Flow Visualization")
         self.show_viz_button.clicked.connect(self._on_show_visualization)
         viz_button_layout.addWidget(self.show_viz_button)
+        
+        self.show_analysis_button = QPushButton("Show Motion Analysis")
+        self.show_analysis_button.clicked.connect(self._on_show_analysis)
+        viz_button_layout.addWidget(self.show_analysis_button)
         
         layout.addLayout(viz_button_layout)
         
@@ -586,6 +590,28 @@ class FlowRegWidget(QWidget):
             viz_widget = FlowVisualizationWidget(self.viewer)
             self.viewer.window.add_dock_widget(viz_widget, name=widget_name, area="right")
             self.show_viz_button.setText("Hide Flow Visualization")
+    
+    def _on_show_analysis(self):
+        """Show or hide the motion analysis widget."""
+        from napari_flowreg.motion_analysis_widget import MotionAnalysisWidget
+        
+        # Check if analysis widget already exists
+        widget_name = "Motion Analysis"
+        if widget_name in self.viewer.window._dock_widgets:
+            # Toggle visibility
+            dock_widget = self.viewer.window._dock_widgets[widget_name]
+            dock_widget.setVisible(not dock_widget.isVisible())
+            
+            # Update button text
+            if dock_widget.isVisible():
+                self.show_analysis_button.setText("Hide Motion Analysis")
+            else:
+                self.show_analysis_button.setText("Show Motion Analysis")
+        else:
+            # Create new analysis widget
+            analysis_widget = MotionAnalysisWidget(self.viewer)
+            self.viewer.window.add_dock_widget(analysis_widget, name=widget_name, area="right")
+            self.show_analysis_button.setText("Hide Motion Analysis")
         
     def log(self, message: str):
         """Add message to log."""
