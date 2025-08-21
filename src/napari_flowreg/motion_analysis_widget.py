@@ -249,43 +249,6 @@ class MotionAnalysisWidget(QWidget):
         except KeyError:
             self.current_roi_layer = None
             
-    def _poly_to_flow_xy(self, pts_shapes):
-        """Convert polygon points from shapes to flow layer coordinates with dimension handling."""
-        shp = self.current_roi_layer
-        flow = self.current_flow_layer
-        pts_world = shp.data_to_world(np.asarray(pts_shapes))
-        
-        # Handle tuple/list returns from data_to_world
-        if isinstance(pts_world, (tuple, list)):
-            pts_world = np.stack(pts_world, axis=1)
-        else:
-            pts_world = np.asarray(pts_world)
-        
-        data = flow.data
-        D = data.ndim - (1 if data.shape[-1] == 2 else 0)
-        
-        if pts_world.shape[1] == D:
-            pts_flow = flow.world_to_data(pts_world)
-            if isinstance(pts_flow, (tuple, list)):
-                pts_flow = np.stack(pts_flow, axis=1)
-            else:
-                pts_flow = np.asarray(pts_flow)
-            return pts_flow[:, -2], pts_flow[:, -1]
-        
-        # Need to pad with current dims
-        cur = list(self.viewer.dims.current_step)[-D:]
-        N = pts_world.shape[0]
-        world_full = np.zeros((N, D), dtype=float)
-        world_full[:, -2:] = pts_world[:, -2:]
-        for ax in range(D - 2):
-            world_full[:, ax] = cur[ax]
-        pts_flow = flow.world_to_data(world_full)
-        if isinstance(pts_flow, (tuple, list)):
-            pts_flow = np.stack(pts_flow, axis=1)
-        else:
-            pts_flow = np.asarray(pts_flow)
-        return pts_flow[:, -2], pts_flow[:, -1]
-    
     def _get_roi_mask(self, hw: Tuple[int, int]) -> Optional[np.ndarray]:
         """Get ROI mask from shapes layer with proper coordinate transformation."""
         if self.current_roi_layer is None or len(self.current_roi_layer.data) == 0:
@@ -299,17 +262,34 @@ class MotionAnalysisWidget(QWidget):
             idxs = [i for i in idxs if types[i] in {"rectangle", "polygon"}]
         mask = np.zeros((H, W), dtype=bool)
         for i in idxs:
-            ys, xs = self._poly_to_flow_xy(shp.data[i])
+            # Get raw shape points - these are in nD coordinates where the last 2 dimensions are spatial (Y, X)
+            raw_pts = shp.data[i]
+            
+            # Extract the spatial coordinates from the last two dimensions
+            # For 4D shapes (e.g., from 4D flow layer), this gets columns -2 and -1
+            # which contain the actual Y and X coordinates respectively
+            ys = raw_pts[:, -2]  # Second-to-last column is Y
+            xs = raw_pts[:, -1]  # Last column is X
+            
+            # Clip to image bounds
             ys = np.clip(ys, 0, H - 1)
             xs = np.clip(xs, 0, W - 1)
+            
+            # Create polygon for mask
             poly = np.stack([ys, xs], axis=1)
             mask |= polygon2mask((H, W), poly)
+            
         return mask if mask.any() else None
         
     def _on_analyze_clicked(self):
         """Perform motion analysis and create plot."""
         if self.current_flow_layer is None:
             show_error("Please select a flow field layer first")
+            return
+        
+        # Ensure viewer is in 2D mode for proper ROI analysis
+        if self.viewer.dims.ndisplay != 2:
+            show_error("Set viewer to 2D (two displayed axes) before analysis.")
             return
             
         flow = self.current_flow_layer.data
@@ -328,6 +308,19 @@ class MotionAnalysisWidget(QWidget):
                 roi_mask = self._get_roi_mask(mag.shape[1:3])
             else:
                 roi_mask = self._get_roi_mask(mag.shape[0:2])
+            
+            # Print ROI dimensions in 2D image space
+            if roi_mask is not None:
+                roi_pixels = np.sum(roi_mask)
+                roi_bounds = np.where(roi_mask)
+                if len(roi_bounds[0]) > 0:
+                    y_min, y_max = roi_bounds[0].min(), roi_bounds[0].max()
+                    x_min, x_max = roi_bounds[1].min(), roi_bounds[1].max()
+                    print(f"ROI dimensions in 2D image space:")
+                    print(f"  - Bounding box: [{y_min}:{y_max+1}, {x_min}:{x_max+1}]")
+                    print(f"  - Size: {y_max-y_min+1} x {x_max-x_min+1} pixels")
+                    print(f"  - Total pixels: {roi_pixels}")
+                    print(f"  - Coverage: {100*roi_pixels/roi_mask.size:.1f}% of image")
                 
         # Compute statistics based on mode
         mode = self.mode_combo.currentText()
