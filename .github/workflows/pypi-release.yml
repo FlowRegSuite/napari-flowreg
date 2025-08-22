@@ -29,16 +29,21 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install Qt dependencies (Linux)
+      - name: System deps for Qt/OpenGL (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-glx libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils
+          sudo apt-get install -y \
+            libgl1 libegl1 libopengl0 \
+            libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
+            libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
       - run: python -m pip install -U pip
       - run: python -m pip install -e .[testing]
       - name: Run tests with Qt backend
         env:
           QT_QPA_PLATFORM: offscreen
+          MPLBACKEND: Agg
         run: pytest tests/ -v --cov=napari_flowreg
       - name: Verify napari plugin registration
         run: python -c "import napari_flowreg; print('napari-flowreg plugin loaded successfully')"
@@ -80,11 +85,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install Qt dependencies (Linux)
+      - name: System deps for Qt/OpenGL (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-glx libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils
+          sudo apt-get install -y \
+            libgl1 libegl1 libopengl0 \
+            libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
+            libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
       - run: python -m pip install dist/*.whl
       - run: |
           python -c "import napari_flowreg; print(f'napari-flowreg version: {getattr(napari_flowreg, '__version__', 'unknown')}')"
@@ -103,10 +112,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Qt dependencies
+      - name: System deps for Qt/OpenGL
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-glx libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 x11-utils
+          sudo apt-get install -y \
+            libgl1 libegl1 libopengl0 \
+            libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
+            libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
       - run: python -m pip install dist/*.tar.gz
       - run: python -c "import napari_flowreg, importlib; importlib.import_module('napari_flowreg'); print('sdist import OK')"
 
