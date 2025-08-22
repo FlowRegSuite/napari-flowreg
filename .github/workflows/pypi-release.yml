@@ -94,11 +94,12 @@ jobs:
             libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
             libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
-      - run: python -m pip install dist/*.whl
       - run: |
-          python -c "import napari_flowreg; print(f'napari-flowreg version: {getattr(napari_flowreg, '__version__', 'unknown')}')"
-          python -c "from napari_flowreg.widgets import FlowRegWidget; print('Widget imports working')"
-          python -c "import napari; print('napari imports working')"
+          python -m pip install PySide6
+          python -m pip install dist/*.whl
+      - run: |
+          python -c "import napari_flowreg; print('napari-flowreg version:', getattr(napari_flowreg, '__version__', 'unknown'))"
+          python -c "from napari_flowreg.flowreg_widget import FlowRegWidget; print('Widget imports working')"
 
   sdist-smoke:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -120,8 +121,10 @@ jobs:
             libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
             libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
-      - run: python -m pip install dist/*.tar.gz
-      - run: python -c "import napari_flowreg, importlib; importlib.import_module('napari_flowreg'); print('sdist import OK')"
+      - run: |
+          python -m pip install PySide6
+          python -m pip install dist/*.tar.gz
+      - run: python -c "import napari_flowreg; print('sdist import OK')"
 
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
