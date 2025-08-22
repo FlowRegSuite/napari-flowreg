@@ -4,4 +4,3 @@ qtpy
 numpy
 scipy>=1.10.0
 matplotlib>=3.5.0
-magicgui>=0.8.0
