@@ -48,6 +48,12 @@ dev = [
     "ruff",
 ]
 
+[project.urls]
+Homepage = "https://github.com/FlowRegSuite/napari-flowreg"
+Source = "https://github.com/FlowRegSuite/napari-flowreg"
+Tracker = "https://github.com/FlowRegSuite/napari-flowreg/issues"
+Documentation = "https://flowregsuite.github.io/napari-flowreg/"
+
 [project.entry-points."napari.manifest"]
 napari-flowreg = "napari_flowreg:napari.yaml"
 

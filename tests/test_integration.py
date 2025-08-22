@@ -240,6 +240,13 @@ def test_memory_efficiency():
 @pytest.mark.slow
 def test_error_handling_in_worker():
     """Test that errors in worker are handled gracefully."""
+    import sys
+    import os
+    
+    # Skip on macOS CI due to Qt abort issues
+    if sys.platform == "darwin" and os.environ.get("CI"):
+        pytest.skip("Skipping on macOS CI due to Qt initialization issues")
+    
     from napari_flowreg.flowreg_widget import FlowRegWidget
     from unittest.mock import MagicMock
     import napari_flowreg.flowreg_widget as widgets_module
