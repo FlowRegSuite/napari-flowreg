@@ -7,25 +7,19 @@ authors = [
     { name="Philipp Flotho", email="Philipp.Flotho@uni-saarland.de" }
 ]
 license = { text = "CC BY-NC-SA 4.0" }
-
-[project.urls]
-Homepage = "https://github.com/FlowRegSuite/napari-flowreg"
-Documentation = "https://github.com/FlowRegSuite/napari-flowreg#readme"
-Repository = "https://github.com/FlowRegSuite/napari-flowreg"
-Issues = "https://github.com/FlowRegSuite/napari-flowreg/issues"
-Changelog = "https://github.com/FlowRegSuite/napari-flowreg/releases"
-
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: napari",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
 requires-python = ">=3.10"
+
 dependencies = [
     "napari>=0.4.18",
     "pyflowreg[vis]",
