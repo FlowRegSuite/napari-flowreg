@@ -101,7 +101,10 @@ def test_entry_point_configured():
     pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
     
     if pyproject_path.exists():
-        import tomllib
+        try:
+            import tomllib
+        except ImportError:
+            import tomli as tomllib
         
         with open(pyproject_path, "rb") as f:
             pyproject = tomllib.load(f)

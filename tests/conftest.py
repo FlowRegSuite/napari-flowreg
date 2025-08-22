@@ -38,10 +38,16 @@ def hermetic_environment():
 @pytest.fixture
 def make_napari_viewer_proxy():
     """Create a headless napari viewer for testing."""
+    import sys
+    import pytest
+    
+    # Skip on macOS CI due to vispy OpenGL segfault
+    if sys.platform == "darwin" and os.environ.get("CI"):
+        pytest.skip("Skipping napari viewer tests on macOS CI due to OpenGL issues")
+    
     try:
         from napari import Viewer
         from napari.utils._proxies import PublicOnlyProxy
-        import sys
         
         viewer = Viewer(show=False)
         viewer_proxy = PublicOnlyProxy(viewer)
@@ -64,9 +70,15 @@ def make_napari_viewer_proxy():
 @pytest.fixture
 def make_napari_viewer():
     """Create a napari viewer for testing (fallback for older napari)."""
+    import sys
+    import pytest
+    
+    # Skip on macOS CI due to vispy OpenGL segfault  
+    if sys.platform == "darwin" and os.environ.get("CI"):
+        pytest.skip("Skipping napari viewer tests on macOS CI due to OpenGL issues")
+    
     try:
         from napari import Viewer
-        import sys
         
         viewer = Viewer(show=False)
         yield viewer
