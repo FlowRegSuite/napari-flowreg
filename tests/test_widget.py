@@ -226,7 +226,7 @@ def test_start_button_without_data(make_napari_viewer_proxy):
     widget = FlowRegWidget(viewer)
     
     # Mock show_error to capture the call
-    with patch('napari_flowreg.widgets.show_error') as mock_error:
+    with patch('napari_flowreg.flowreg_widget.show_error') as mock_error:
         widget._on_start_clicked()
         
         # Should show error about no input
@@ -234,7 +234,7 @@ def test_start_button_without_data(make_napari_viewer_proxy):
         assert "No input layer" in str(mock_error.call_args)
 
 
-@patch('napari_flowreg.widgets.PYFLOWREG_AVAILABLE', False)
+@patch('napari_flowreg.flowreg_widget.PYFLOWREG_AVAILABLE', False)
 def test_start_without_pyflowreg(make_napari_viewer_proxy):
     """Test start button when pyflowreg is not available."""
     from napari_flowreg.flowreg_widget import FlowRegWidget
@@ -242,7 +242,7 @@ def test_start_without_pyflowreg(make_napari_viewer_proxy):
     viewer = make_napari_viewer_proxy
     widget = FlowRegWidget(viewer)
     
-    with patch('napari_flowreg.widgets.show_error') as mock_error:
+    with patch('napari_flowreg.flowreg_widget.show_error') as mock_error:
         widget._on_start_clicked()
         
         # Should show error about pyflowreg

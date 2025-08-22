@@ -41,11 +41,22 @@ def make_napari_viewer_proxy():
     try:
         from napari import Viewer
         from napari.utils._proxies import PublicOnlyProxy
+        import sys
         
         viewer = Viewer(show=False)
         viewer_proxy = PublicOnlyProxy(viewer)
         yield viewer_proxy
-        viewer.close()
+        
+        # Safer cleanup for Windows OpenGL context issues
+        try:
+            viewer.layers.clear()
+            viewer.close()
+        except (RuntimeError, AttributeError) as e:
+            if "OpenGL" in str(e) or "glBindFramebuffer" in str(e):
+                # Known issue on Windows with OpenGL context during teardown
+                pass
+            else:
+                raise
     except ImportError:
         pytest.skip("napari not installed")
 
@@ -55,10 +66,21 @@ def make_napari_viewer():
     """Create a napari viewer for testing (fallback for older napari)."""
     try:
         from napari import Viewer
+        import sys
         
         viewer = Viewer(show=False)
         yield viewer
-        viewer.close()
+        
+        # Safer cleanup for Windows OpenGL context issues
+        try:
+            viewer.layers.clear()
+            viewer.close()
+        except (RuntimeError, AttributeError) as e:
+            if "OpenGL" in str(e) or "glBindFramebuffer" in str(e):
+                # Known issue on Windows with OpenGL context during teardown
+                pass
+            else:
+                raise
     except ImportError:
         pytest.skip("napari not installed")
 
