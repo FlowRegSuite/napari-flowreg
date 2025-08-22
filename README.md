@@ -1,3 +1,9 @@
+[![PyPI - Version](https://img.shields.io/pypi/v/napari-flowreg)](https://pypi.org/project/napari-flowreg/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/napari-flowreg)](https://pypi.org/project/napari-flowreg/)
+[![PyPI - License](https://img.shields.io/pypi/l/napari-flowreg)](LICENSE)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/napari-flowreg)](https://pypistats.org/packages/napari-flowreg)
+[![GitHub Actions](https://github.com/FlowRegSuite/napari-flowreg/actions/workflows/pypi-release.yml/badge.svg)](https://github.com/FlowRegSuite/napari-flowreg/actions/workflows/pypi-release.yml)
+
 ## 🚧 Under Development
 
 This project is still in an **alpha stage**. Expect rapid changes, incomplete features, and possible breaking updates between releases. 
