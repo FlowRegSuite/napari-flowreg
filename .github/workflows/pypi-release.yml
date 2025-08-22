@@ -94,9 +94,10 @@ jobs:
             libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
             libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
-      - run: |
+      - name: Install wheel
+        run: |
           python -m pip install napari[all]
-          python -m pip install dist/*.whl
+          python -c "import glob; import subprocess; wheels = glob.glob('dist/*.whl'); print(f'Found wheels: {wheels}'); subprocess.check_call(['pip', 'install'] + wheels)"
       - run: |
           python -c "import napari_flowreg; print('napari-flowreg version:', getattr(napari_flowreg, '__version__', 'unknown'))"
           python -c "from napari_flowreg.flowreg_widget import FlowRegWidget; print('Widget imports working')"
@@ -122,9 +123,10 @@ jobs:
             libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
             libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
-      - run: |
+      - name: Install sdist
+        run: |
           python -m pip install napari[all]
-          python -m pip install dist/*.tar.gz
+          python -c "import glob; import subprocess; tarballs = glob.glob('dist/*.tar.gz'); print(f'Found sdists: {tarballs}'); subprocess.check_call(['pip', 'install'] + tarballs)"
       - run: python -c "import napari_flowreg; print('sdist import OK')"
 
   publish:

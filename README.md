@@ -28,7 +28,7 @@ To install the plugin via conda, you can create a new environment and install `n
 
 You can then install `napari-flowreg` via [pip]:
 
-    pip install napari-flowreg
+    pip install napari[all] napari-flowreg
 
 or from the directly from the GitHub repository:
 
