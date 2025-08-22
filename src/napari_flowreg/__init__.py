@@ -18,7 +18,10 @@ if sys.platform == "win32":
     if dll.exists():
         os.add_dll_directory(str(dll))
 
-__version__ = "0.0.1-alpha.1"
+try:
+    from ._version import version as __version__
+except ImportError:
+    __version__ = "0.0.0+unknown"
 
 from .flowreg_widget import FlowRegWidget
 

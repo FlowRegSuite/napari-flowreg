@@ -1,6 +1,6 @@
 [project]
 name = "napari-flowreg"
-version = "0.0.1-alpha.1"
+dynamic = ["version"]
 description = "napari plugin for Flow-Registration motion correction"
 readme = "README.md"
 authors = [
@@ -20,7 +20,7 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "napari>=0.4.18",
-    "pyflowreg",
+    "pyflowreg[vis]",
     "qtpy",
     "numpy",
     "scipy>=1.10.0",
@@ -51,7 +51,7 @@ dev = [
 napari-flowreg = "napari_flowreg:napari.yaml"
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=80", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -59,6 +59,10 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 napari_flowreg = ["napari.yaml"]
+
+[tool.setuptools_scm]
+version_file = "src/napari_flowreg/_version.py"
+local_scheme = "no-local-version"
 
 # Testing configuration
 [tool.pytest.ini_options]

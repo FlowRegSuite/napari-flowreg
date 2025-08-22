@@ -1,3 +1,11 @@
+## 🚧 Under Development
+
+This project is still in an **alpha stage**. Expect rapid changes, incomplete features, and possible breaking updates between releases. 
+
+- The API may evolve as we stabilize core functionality.  
+- Documentation and examples are incomplete.  
+- Feedback and bug reports are especially valuable at this stage.
+
 # <img src="img/flowreglogo.png" alt="FlowReg logo" height="64"> napari-FlowReg
 
 This repository contains the napari wrapper for the Flow-Registration toolbox, which is a toolbox for the compensation and stabilization of multichannel microscopy videos. 
@@ -7,7 +15,7 @@ The publication for this toolbox can be found [here](https://doi.org/10.1002/jbi
 - PyFlowReg: https://github.com/FlowRegSuite/pyflowreg
 - Original Flow-Registration repo: https://github.com/FlowRegSuite/flow_registration
 - ImageJ/Fiji plugin: https://github.com/FlowRegSuite/flow_registration_IJ
-- MCP tools for LLM workflows: https://github.com/FlowRegSuite/pyflowreg-mcp
+
 
 ![Fig1](img/bg.jpg)
 
@@ -29,26 +37,15 @@ or from the directly from the GitHub repository:
 
 ## Dataset
 
-The dataset which we used for our evaluations is available as [2-Photon Movies with Motion Artifacts](https://www.datadryad.org).
+The dataset which we used for our evaluations is available as [2-Photon Movies with Motion Artifacts](https://drive.google.com/drive/folders/1fPdzQo5SiA-62k4eHF0ZaKJDt1vmTVed?usp=sharing).
 
 ## Citation
 
-Details on the method and video results can be found [here](https://www.snnu.uni-saarland.de/flow-registration/).
+Details on the original method and video results can be found [here](https://www.snnu.uni-saarland.de/flow-registration/).
 
 If you use parts of this code or the plugin for your work, please cite
 
-> P. Flotho, S. Nomura, M. Flotho, A. Keller and B. Kuhn, “Pyflowreg: A python package for high accuracy motion correction of 2P microscopy videos and 3D scans,” arxiv, 2024. [doi:https://]()
-
-BibTeX entry
-```
-@article{flotea2025g,
-    author = {Flotho, P. and Nomura, S. and Flotho, M. and Keller, A. and Kuhn, B.},
-    title = {Pyflowreg: A python package for high accuracy motion correction of 2P microscopy videos and 3D scans},
-    year = {2022},
-  journal = {arxiv},
-  doi = {https://doi.org/}
-}
-```
+> “Pyflowreg,” (in preparation), 2025.
 
 and 
 
