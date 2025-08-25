@@ -1,5 +1,5 @@
 name: napari-flowreg
-display_name: FlowReg Motion Correction
+display_name: Flow-Registration Motion Correction and Analysis for 2P Imaging
 schema_version: 0.1.0
 
 contributions:
