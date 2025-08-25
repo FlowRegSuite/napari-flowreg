@@ -12,7 +12,7 @@ This project is still in an **alpha stage**. Expect rapid changes, incomplete fe
 - Documentation and examples are incomplete.  
 - Feedback and bug reports are especially valuable at this stage.
 
-# <img src="img/flowreglogo.png" alt="FlowReg logo" height="64"> napari-FlowReg
+# <img src="https://raw.githubusercontent.com/FlowRegSuite/pyflowreg/refs/heads/main/img/flowreglogo.png" alt="FlowReg logo" height="64"> napari-FlowReg
 
 This repository contains the napari wrapper for the Flow-Registration toolbox, which is a toolbox for the compensation and stabilization of multichannel microscopy videos. 
 The publication for this toolbox can be found [here](https://doi.org/10.1002/jbio.202100330) and the project website with video results [here](https://www.snnu.uni-saarland.de/flow-registration/).
@@ -23,7 +23,7 @@ The publication for this toolbox can be found [here](https://doi.org/10.1002/jbi
 - ImageJ/Fiji plugin: https://github.com/FlowRegSuite/flow_registration_IJ
 
 
-![Fig1](img/bg.jpg)
+![Fig1](https://raw.githubusercontent.com/FlowRegSuite/pyflowreg/refs/heads/main/img/bg.jpg)
 
 
 ## Installation via pip and conda
