@@ -70,6 +70,7 @@ napari_flowreg = ["napari.yaml"]
 
 [tool.setuptools_scm]
 version_file = "src/napari_flowreg/_version.py"
+version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
 
 # Testing configuration
