@@ -3,22 +3,23 @@ Motion Analysis Widget for napari-flowreg
 Provides analysis tools for optical flow fields
 """
 
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Tuple, Union, Dict, Any
 import numpy as np
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QComboBox, QGridLayout,
-    QCheckBox, QFileDialog, QMessageBox
+    QCheckBox, QFileDialog, QMessageBox, QDialog, QDialogButtonBox
 )
 from qtpy.QtCore import Qt, Signal
 from napari.viewer import Viewer
-from napari.layers import Image, Shapes
+from napari.layers import Image, Shapes, Points
 from napari.utils.notifications import show_info, show_error
 from napari.qt.threading import thread_worker
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from skimage.draw import polygon2mask
+from scipy.interpolate import RegularGridInterpolator
 
 
 class MotionAnalysisWidget(QWidget):
@@ -32,6 +33,8 @@ class MotionAnalysisWidget(QWidget):
         self.figure = None
         self.canvas = None
         self.motion_data = None  # Store computed motion data for export
+        self.tracked_points = {}  # Store tracked point trajectories
+        self.roi_shapes_data = {}  # Store individual ROI data
         self._init_ui()
         
         # Connect to layer events
@@ -131,10 +134,14 @@ class MotionAnalysisWidget(QWidget):
         self.clear_button.clicked.connect(self._on_clear_clicked)
         button_layout.addWidget(self.clear_button)
         
-        self.export_button = QPushButton("Save as MAT")
+        self.export_button = QPushButton("Export All to MAT")
         self.export_button.clicked.connect(self._on_export_clicked)
         self.export_button.setEnabled(False)  # Disabled until data is computed
         button_layout.addWidget(self.export_button)
+        
+        self.track_points_button = QPushButton("Track Points")
+        self.track_points_button.clicked.connect(self._on_track_points_clicked)
+        button_layout.addWidget(self.track_points_button)
         
         layout.addLayout(button_layout)
         
@@ -249,6 +256,55 @@ class MotionAnalysisWidget(QWidget):
         except KeyError:
             self.current_roi_layer = None
             
+    def _get_individual_roi_masks(self, hw: Tuple[int, int]) -> Dict[int, Dict[str, Any]]:
+        """Get individual ROI masks from shapes layer, one for each shape."""
+        if self.current_roi_layer is None or len(self.current_roi_layer.data) == 0:
+            return {}
+        
+        H, W = hw
+        shp = self.current_roi_layer
+        idxs = list(shp.selected_data) if len(shp.selected_data) > 0 else list(range(len(shp.data)))
+        types = getattr(shp, "shape_types", None)
+        
+        roi_dict = {}
+        for i in idxs:
+            # Skip non-polygon shapes (e.g., points, ellipses)
+            if types is not None and types[i] not in {"rectangle", "polygon"}:
+                continue
+                
+            mask = np.zeros((H, W), dtype=bool)
+            raw_pts = shp.data[i]
+            
+            # Extract spatial coordinates
+            ys = raw_pts[:, -2]
+            xs = raw_pts[:, -1]
+            
+            # Clip to bounds
+            ys = np.clip(ys, 0, H - 1)
+            xs = np.clip(xs, 0, W - 1)
+            
+            # Create polygon mask
+            poly = np.stack([ys, xs], axis=1)
+            mask = polygon2mask((H, W), poly)
+            
+            if mask.any():
+                # Get shape properties for naming
+                props = shp.properties if hasattr(shp, 'properties') else {}
+                name = f"ROI_{i+1}"
+                if 'name' in props and len(props['name']) > i:
+                    custom_name = props['name'][i]
+                    if custom_name:
+                        name = custom_name
+                
+                roi_dict[i] = {
+                    'mask': mask,
+                    'name': name,
+                    'vertices': poly.tolist(),
+                    'shape_type': types[i] if types else 'polygon'
+                }
+        
+        return roi_dict
+    
     def _get_roi_mask(self, hw: Tuple[int, int]) -> Optional[np.ndarray]:
         """Get ROI mask from shapes layer with proper coordinate transformation."""
         if self.current_roi_layer is None or len(self.current_roi_layer.data) == 0:
@@ -302,12 +358,22 @@ class MotionAnalysisWidget(QWidget):
             return
         
         mag = np.hypot(u, v)
-        roi_mask = None
+        
+        # Get individual ROI masks instead of combined mask
+        roi_masks_dict = {}
         if self.current_roi_layer is not None:
             if mag.ndim == 3:
-                roi_mask = self._get_roi_mask(mag.shape[1:3])
+                roi_masks_dict = self._get_individual_roi_masks(mag.shape[1:3])
             else:
-                roi_mask = self._get_roi_mask(mag.shape[0:2])
+                roi_masks_dict = self._get_individual_roi_masks(mag.shape[0:2])
+        
+        # For backward compatibility, create combined mask
+        roi_mask = None
+        if roi_masks_dict:
+            # Combine all masks for legacy code
+            roi_mask = np.zeros_like(list(roi_masks_dict.values())[0]['mask'])
+            for roi_data in roi_masks_dict.values():
+                roi_mask |= roi_data['mask']
             
             # Print ROI dimensions in 2D image space
             if roi_mask is not None:
@@ -327,7 +393,39 @@ class MotionAnalysisWidget(QWidget):
         
         if mag.ndim == 3:  # Video data (T, H, W)
             n_frames = mag.shape[0]
-            motion_values = np.zeros(n_frames)
+            
+            # Compute motion for each ROI separately
+            if roi_masks_dict:
+                roi_motion_data = {}
+                for roi_id, roi_info in roi_masks_dict.items():
+                    roi_motion = np.zeros(n_frames)
+                    for t in range(n_frames):
+                        frame_mag = mag[t]
+                        roi_values = frame_mag[roi_info['mask']]
+                        
+                        if mode == "mean":
+                            roi_motion[t] = np.mean(roi_values)
+                        elif mode == "max":
+                            roi_motion[t] = np.max(roi_values)
+                        elif mode == "min":
+                            roi_motion[t] = np.min(roi_values)
+                    
+                    roi_motion_data[roi_id] = {
+                        'name': roi_info['name'],
+                        'motion_magnitude': roi_motion,
+                        'vertices': roi_info['vertices'],
+                        'shape_type': roi_info['shape_type']
+                    }
+                
+                # Store individual ROI data
+                self.roi_shapes_data = roi_motion_data
+                
+                # For plotting, use mean of all ROIs (or could plot all)
+                all_roi_motions = [data['motion_magnitude'] for data in roi_motion_data.values()]
+                motion_values = np.mean(all_roi_motions, axis=0)
+            else:
+                # No ROI, use full image
+                motion_values = np.zeros(n_frames)
             
             for t in range(n_frames):
                 frame_mag = mag[t]
@@ -347,7 +445,8 @@ class MotionAnalysisWidget(QWidget):
                 'motion_magnitude': motion_values,
                 'mode': mode,
                 'n_frames': n_frames,
-                'has_roi': roi_mask is not None
+                'has_roi': roi_mask is not None,
+                'individual_rois': self.roi_shapes_data if roi_masks_dict else {}
             }
             
             # Create plot
@@ -469,7 +568,29 @@ class MotionAnalysisWidget(QWidget):
                 'flow_layer_name': self.current_flow_layer.name if self.current_flow_layer else 'unknown'
             }
             
-            # Add ROI information if available
+            # Add individual ROI data if available
+            if 'individual_rois' in self.motion_data and self.motion_data['individual_rois']:
+                roi_struct = {}
+                for idx, (roi_id, roi_data) in enumerate(self.motion_data['individual_rois'].items()):
+                    roi_struct[f'roi_{idx+1}'] = {
+                        'name': roi_data['name'],
+                        'motion_magnitude': roi_data['motion_magnitude'],
+                        'vertices': np.array(roi_data['vertices']),
+                        'shape_type': roi_data['shape_type']
+                    }
+                export_data['rois'] = roi_struct
+            
+            # Add tracked points if available
+            if self.tracked_points:
+                points_struct = {}
+                for idx, (name, trajectory) in enumerate(self.tracked_points.items()):
+                    points_struct[f'point_{idx+1}'] = {
+                        'name': name,
+                        'trajectory': trajectory
+                    }
+                export_data['tracked_points'] = points_struct
+            
+            # Add ROI layer name if available
             if self.current_roi_layer is not None:
                 export_data['roi_layer_name'] = self.current_roi_layer.name
                 
@@ -482,3 +603,305 @@ class MotionAnalysisWidget(QWidget):
             show_error("scipy is required for MAT file export. Please install it with: pip install scipy")
         except Exception as e:
             show_error(f"Failed to save MAT file: {str(e)}")
+    
+    def _on_track_points_clicked(self):
+        """Open dialog for point tracking configuration."""
+        if self.current_flow_layer is None:
+            show_error("Please select a flow field layer first")
+            return
+            
+        # Check if flow is temporal
+        flow = self.current_flow_layer.data
+        if flow.ndim != 4 or flow.shape[-1] != 2:
+            show_error("Point tracking requires temporal flow field (shape: T, H, W, 2)")
+            return
+        
+        # Open point tracking dialog
+        dialog = PointTrackingDialog(self.viewer, self)
+        if dialog.exec_() == QDialog.Accepted:
+            selected_layer = dialog.get_selected_layer()
+            track_all = dialog.track_all_checkbox.isChecked()
+            
+            if track_all:
+                self._track_points(None, track_all=True)
+            elif selected_layer:
+                self._track_points(selected_layer, track_all=False)
+    
+    def _track_points(self, points_layer_name: Optional[str], track_all: bool = False):
+        """Track points through time using optical flow.
+        
+        Takes seed points (interpreted as positions at frame 0) and creates:
+        1. Tracks layer: trajectories across all frames anchored at seed locations
+        2. Points layer (optional): all tracked positions across all frames
+        
+        Uses fixed-reference tracking: position_t = seed + flow_t(seed)
+        """
+        try:
+            if self.current_flow_layer is None:
+                show_error("Select a flow field layer first")
+                return
+            
+            flow = self.current_flow_layer.data
+            if flow.ndim != 4 or flow.shape[-1] != 2:
+                show_error("Flow must be (T,H,W,2)")
+                return
+            
+            T, H, W, _ = flow.shape
+            
+            # Flow sign: +1 if flow is reference->frame, -1 if frame->reference
+            SIGN = +1
+
+            if track_all:
+                src_layers = [ly for ly in self.viewer.layers if isinstance(ly, (Points, Shapes))]
+            else:
+                src_layers = [self.viewer.layers[points_layer_name]]
+
+            any_out = False
+            self.tracked_points = {}
+
+            for layer in src_layers:
+                if isinstance(layer, Points):
+                    coords = np.asarray(layer.data, dtype=float)
+                    if coords.ndim != 2 or coords.shape[1] < 2:
+                        continue
+                    
+                    # Extract seed Y,X coordinates (last 2 dimensions)
+                    yx0 = coords[:, -2:].copy()
+                    
+                    # Build Tracks across all T frames, anchored at seed coords
+                    tracks = []
+                    for pid in range(len(yx0)):
+                        y0, x0 = yx0[pid]
+                        for t in range(T):
+                            # Sample flow at seed location for frame t
+                            u = self._bilinear_interpolate(flow[t, :, :, 0], x0, y0)
+                            v = self._bilinear_interpolate(flow[t, :, :, 1], x0, y0)
+                            
+                            # Compute displaced position
+                            yt = np.clip(y0 + SIGN * v, 0, H - 1)
+                            xt = np.clip(x0 + SIGN * u, 0, W - 1)
+                            
+                            # Track format: [track_id, time, y, x]
+                            tracks.append([pid, float(t), yt, xt])
+                    
+                    tracks = np.asarray(tracks, dtype=float)
+                    track_name = f"{layer.name}_tracked"
+                    self.viewer.add_tracks(
+                        tracks, 
+                        name=track_name, 
+                        colormap="turbo", 
+                        tail_length=10, 
+                        tail_width=2, 
+                        head_length=0
+                    )
+                    self.tracked_points[track_name] = tracks
+                    
+                    # Optional: Also create Points layer spanning all frames
+                    pts_all = []
+                    for pid in range(len(yx0)):
+                        y0, x0 = yx0[pid]
+                        for t in range(T):
+                            u = self._bilinear_interpolate(flow[t, :, :, 0], x0, y0)
+                            v = self._bilinear_interpolate(flow[t, :, :, 1], x0, y0)
+                            # Points format: [time, y, x]
+                            pts_all.append([float(t), 
+                                          np.clip(y0 + SIGN * v, 0, H - 1), 
+                                          np.clip(x0 + SIGN * u, 0, W - 1)])
+                    
+                    pts_all = np.asarray(pts_all, dtype=float)
+                    pts_name = f"{layer.name}_points_all_t"
+                    self.viewer.add_points(
+                        pts_all, 
+                        name=pts_name,
+                        size=5,
+                        face_color='yellow'
+                    )
+                    
+                    any_out = True
+
+                elif isinstance(layer, Shapes) and hasattr(layer, "shape_types"):
+                    # Find point shapes
+                    idxs = [i for i, t in enumerate(layer.shape_types) if t in ("point", "points")]
+                    if not idxs:
+                        continue
+                    
+                    # Collect points from all point shapes
+                    pts = []
+                    for i in idxs:
+                        d = np.asarray(layer.data[i], dtype=float)
+                        if d.ndim == 1:
+                            d = d[None, :]
+                        pts.append(d)
+                    
+                    if not pts:
+                        continue
+                    
+                    coords = np.vstack(pts)
+                    
+                    # Extract seed Y,X coordinates (last 2 dimensions)
+                    yx0 = coords[:, -2:].copy()
+
+                    # Build Tracks across all T frames
+                    tracks = []
+                    for pid in range(len(yx0)):
+                        y0, x0 = yx0[pid]
+                        for t in range(T):
+                            u = self._bilinear_interpolate(flow[t, :, :, 0], x0, y0)
+                            v = self._bilinear_interpolate(flow[t, :, :, 1], x0, y0)
+                            yt = np.clip(y0 + SIGN * v, 0, H - 1)
+                            xt = np.clip(x0 + SIGN * u, 0, W - 1)
+                            tracks.append([pid, float(t), yt, xt])
+                    
+                    tracks = np.asarray(tracks, dtype=float)
+                    track_name = f"{layer.name}_tracked"
+                    self.viewer.add_tracks(
+                        tracks, 
+                        name=track_name, 
+                        colormap="turbo", 
+                        tail_length=10, 
+                        tail_width=2, 
+                        head_length=0
+                    )
+                    self.tracked_points[track_name] = tracks
+                    
+                    # Optional: Points layer
+                    pts_all = []
+                    for pid in range(len(yx0)):
+                        y0, x0 = yx0[pid]
+                        for t in range(T):
+                            u = self._bilinear_interpolate(flow[t, :, :, 0], x0, y0)
+                            v = self._bilinear_interpolate(flow[t, :, :, 1], x0, y0)
+                            pts_all.append([float(t), 
+                                          np.clip(y0 + SIGN * v, 0, H - 1), 
+                                          np.clip(x0 + SIGN * u, 0, W - 1)])
+                    
+                    pts_all = np.asarray(pts_all, dtype=float)
+                    pts_name = f"{layer.name}_points_all_t"
+                    self.viewer.add_points(
+                        pts_all, 
+                        name=pts_name,
+                        size=5,
+                        face_color='green'
+                    )
+                    
+                    any_out = True
+
+            if any_out:
+                self.export_button.setEnabled(True)
+                show_info("Created fixed-reference tracks spanning all frames")
+            else:
+                show_error("No point data found")
+                
+        except Exception as e:
+            show_error(f"Point tracking failed: {str(e)}")
+    
+    def _bilinear_interpolate(self, field: np.ndarray, x: float, y: float) -> float:
+        """Bilinear interpolation of 2D field at position (x, y)."""
+        H, W = field.shape
+        
+        # Clip to bounds
+        x = np.clip(x, 0, W - 1.001)
+        y = np.clip(y, 0, H - 1.001)
+        
+        # Get integer parts
+        x0, y0 = int(x), int(y)
+        x1, y1 = min(x0 + 1, W - 1), min(y0 + 1, H - 1)
+        
+        # Get fractional parts
+        fx, fy = x - x0, y - y0
+        
+        # Bilinear interpolation
+        return (field[y0, x0] * (1 - fx) * (1 - fy) +
+                field[y0, x1] * fx * (1 - fy) +
+                field[y1, x0] * (1 - fx) * fy +
+                field[y1, x1] * fx * fy)
+
+
+class PointTrackingDialog(QDialog):
+    """Dialog for configuring point tracking."""
+    
+    def __init__(self, viewer: Viewer, parent=None):
+        super().__init__(parent)
+        self.viewer = viewer
+        self.setWindowTitle("Track Points Configuration")
+        self.setModal(True)
+        self._init_ui()
+    
+    def _init_ui(self):
+        """Initialize the dialog UI."""
+        layout = QVBoxLayout()
+        
+        # Instructions
+        instructions = QLabel(
+            "Select a Points layer or Shapes layer with points to track.\n"
+            "Points will be tracked through time using the optical flow field."
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+        
+        # Layer selection
+        layout.addWidget(QLabel("Select Layer:"))
+        self.layer_combo = QComboBox()
+        self._populate_layers()
+        layout.addWidget(self.layer_combo)
+        
+        # Track all checkbox
+        self.track_all_checkbox = QCheckBox("Track all point layers")
+        self.track_all_checkbox.stateChanged.connect(self._on_track_all_changed)
+        layout.addWidget(self.track_all_checkbox)
+        
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+        self.resize(400, 200)
+    
+    def _populate_layers(self):
+        """Populate combo box with point-containing layers."""
+        self.layer_combo.clear()
+        
+        # Add Points layers
+        for layer in self.viewer.layers:
+            if isinstance(layer, Points):
+                self.layer_combo.addItem(f"[Points] {layer.name}")
+            elif isinstance(layer, Shapes):
+                # Check if has point shapes
+                if hasattr(layer, 'shape_types'):
+                    if 'point' in layer.shape_types or 'points' in layer.shape_types:
+                        # Count total points across all point shapes
+                        n_points = 0
+                        for i, t in enumerate(layer.shape_types):
+                            if t in ('point', 'points'):
+                                shape_data = layer.data[i]
+                                if shape_data.ndim == 1:
+                                    n_points += 1
+                                else:
+                                    n_points += len(shape_data)
+                        self.layer_combo.addItem(f"[Shapes] {layer.name} ({n_points} points)")
+    
+    def _on_track_all_changed(self, state):
+        """Handle track all checkbox change."""
+        self.layer_combo.setEnabled(state != Qt.Checked)
+    
+    def get_selected_layer(self) -> Optional[str]:
+        """Get the selected layer name."""
+        if self.track_all_checkbox.isChecked():
+            return None  # Will track all
+        
+        text = self.layer_combo.currentText()
+        if text:
+            # Remove prefix and point count
+            if text.startswith("[Points] "):
+                return text[9:]
+            elif text.startswith("[Shapes] "):
+                # Remove "[Shapes] " prefix and " (n points)" suffix if present
+                name = text[9:]
+                if " (" in name:
+                    name = name.split(" (")[0]
+                return name
+        return None
