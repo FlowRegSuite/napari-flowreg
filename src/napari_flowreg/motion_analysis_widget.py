@@ -905,18 +905,18 @@ class MotionAnalysisWidget(QWidget):
     def _bilinear_interpolate(self, field: np.ndarray, x: float, y: float) -> float:
         """Bilinear interpolation of 2D field at position (x, y)."""
         H, W = field.shape
-        
-        # Clip to bounds
-        x = np.clip(x, 0, W - 1.001)
-        y = np.clip(y, 0, H - 1.001)
-        
+
+        # Clip to bounds - allow exact boundary values
+        x = np.clip(x, 0, W - 1)
+        y = np.clip(y, 0, H - 1)
+
         # Get integer parts
         x0, y0 = int(x), int(y)
         x1, y1 = min(x0 + 1, W - 1), min(y0 + 1, H - 1)
-        
+
         # Get fractional parts
         fx, fy = x - x0, y - y0
-        
+
         # Bilinear interpolation
         return (field[y0, x0] * (1 - fx) * (1 - fy) +
                 field[y0, x1] * fx * (1 - fy) +
