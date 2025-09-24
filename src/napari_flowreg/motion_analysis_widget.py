@@ -8,11 +8,12 @@ import numpy as np
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QComboBox, QGridLayout,
-    QCheckBox, QFileDialog, QMessageBox, QDialog, QDialogButtonBox
+    QCheckBox, QFileDialog, QMessageBox, QDialog, QDialogButtonBox,
+    QTreeWidget, QTreeWidgetItem, QScrollArea, QSpinBox, QLineEdit
 )
 from qtpy.QtCore import Qt, Signal
 from napari.viewer import Viewer
-from napari.layers import Image, Shapes, Points
+from napari.layers import Image, Shapes, Points, Tracks
 from napari.utils.notifications import show_info, show_error
 from napari.qt.threading import thread_worker
 import matplotlib.pyplot as plt
@@ -539,70 +540,176 @@ class MotionAnalysisWidget(QWidget):
         self.export_button.setEnabled(False)
         
     def _on_export_clicked(self):
-        """Export motion analysis data to MAT file."""
-        if self.motion_data is None:
-            show_error("No data to export. Please run analysis first.")
-            return
-            
-        # Get save path from user
-        file_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Motion Analysis Data",
-            "",
-            "MAT files (*.mat)"
-        )
+        """Open comprehensive export dialog."""
+        dialog = ExportDialog(self.viewer, self)
         
-        if not file_path:
-            return  # User cancelled
-            
+        if dialog.exec_() == QDialog.Accepted:
+            options = dialog.get_export_options()
+            self._perform_export(options)
+    
+    def _perform_export(self, options):
+        """Perform the actual export based on selected options."""
         try:
-            # Import scipy for MAT file saving
             from scipy.io import savemat
+            import scipy.io as sio
+            from datetime import datetime
             
-            # Prepare data for export
-            export_data = {
-                'motion_magnitude': self.motion_data['motion_magnitude'],
-                'statistic_mode': self.motion_data['mode'],
-                'n_frames': self.motion_data['n_frames'],
-                'has_roi': self.motion_data['has_roi'],
-                'flow_layer_name': self.current_flow_layer.name if self.current_flow_layer else 'unknown'
-            }
+            export_data = {}
             
-            # Add individual ROI data if available
-            if 'individual_rois' in self.motion_data and self.motion_data['individual_rois']:
-                roi_struct = {}
-                for idx, (roi_id, roi_data) in enumerate(self.motion_data['individual_rois'].items()):
-                    roi_struct[f'roi_{idx+1}'] = {
-                        'name': roi_data['name'],
-                        'motion_magnitude': roi_data['motion_magnitude'],
-                        'vertices': np.array(roi_data['vertices']),
-                        'shape_type': roi_data['shape_type']
-                    }
-                export_data['rois'] = roi_struct
+            # Add metadata if requested
+            if options['include_metadata']:
+                export_data['metadata'] = {
+                    'export_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'napari_flowreg_version': '0.1.0',
+                    'export_options': str(options)
+                }
             
-            # Add tracked points if available
-            if self.tracked_points:
-                points_struct = {}
-                for idx, (name, trajectory) in enumerate(self.tracked_points.items()):
-                    points_struct[f'point_{idx+1}'] = {
-                        'name': name,
-                        'trajectory': trajectory
-                    }
-                export_data['tracked_points'] = points_struct
-            
-            # Add ROI layer name if available
-            if self.current_roi_layer is not None:
-                export_data['roi_layer_name'] = self.current_roi_layer.name
+            # Process ROI layers
+            for roi_layer in options['roi_layers']:
+                roi_name = roi_layer.name.replace(' ', '_')
                 
-            # Save to MAT file
-            savemat(file_path, export_data)
+                # Re-extract motion statistics from current viewer state
+                if self.current_flow_layer is not None:
+                    flow = self.current_flow_layer.data
+                    
+                    # Extract motion for each shape in the layer
+                    roi_data = {}
+                    for idx, shape_data in enumerate(roi_layer.data):
+                        shape_type = roi_layer.shape_types[idx] if hasattr(roi_layer, 'shape_types') else 'unknown'
+                        
+                        # Create mask for this shape
+                        mask = self._create_shape_mask(shape_data, shape_type, flow.shape[1:3])
+                        
+                        if mask is not None and np.any(mask):
+                            # Calculate motion statistics
+                            motion_mag = np.sqrt(flow[..., 0]**2 + flow[..., 1]**2)
+                            masked_motion = motion_mag[:, mask]
+                            
+                            shape_stats = {
+                                'shape_type': shape_type,
+                                'vertices': np.array(shape_data)
+                            }
+                            
+                            if options['include_time_series']:
+                                shape_stats['time_series'] = masked_motion.mean(axis=1)
+                            
+                            if options['stats']['mean']:
+                                shape_stats['mean'] = masked_motion.mean()
+                            if options['stats']['max']:
+                                shape_stats['max'] = masked_motion.max()
+                            if options['stats']['min']:
+                                shape_stats['min'] = masked_motion.min()
+                            if options['stats']['std']:
+                                shape_stats['std'] = masked_motion.std()
+                            if options['stats']['median']:
+                                shape_stats['median'] = np.median(masked_motion)
+                            if options['stats']['percentiles']:
+                                shape_stats['percentile_5'] = np.percentile(masked_motion, 5)
+                                shape_stats['percentile_95'] = np.percentile(masked_motion, 95)
+                            
+                            if options['include_roi_masks']:
+                                shape_stats['mask'] = mask
+                            
+                            roi_data[f'shape_{idx}'] = shape_stats
+                    
+                    export_data[f'roi_{roi_name}'] = roi_data
             
-            show_info(f"Motion analysis data saved to {file_path}")
+            # Process track layers
+            for track_layer in options['track_layers']:
+                track_name = track_layer.name.replace(' ', '_')
+                export_data[f'tracks_{track_name}'] = {
+                    'data': track_layer.data,
+                    'properties': track_layer.properties if hasattr(track_layer, 'properties') else {}
+                }
+            
+            # Process flow layers (with options)
+            for flow_layer in options['flow_layers']:
+                flow_name = flow_layer.name.replace(' ', '_')
+                flow_data = flow_layer.data.copy()
+                
+                # Apply downsampling if requested
+                if options['downsample']:
+                    factor = options['downsample_factor']
+                    flow_data = flow_data[:, ::factor, ::factor, :]
+                
+                # Apply frame subset if requested
+                if options['subset_frames']:
+                    start = options['frame_start']
+                    end = options['frame_end'] if options['frame_end'] else flow_data.shape[0]
+                    flow_data = flow_data[start:end]
+                
+                # Convert to magnitude only if requested
+                if options['magnitude_only']:
+                    flow_data = np.sqrt(flow_data[..., 0]**2 + flow_data[..., 1]**2)
+                
+                export_data[f'flow_{flow_name}'] = flow_data
+            
+            # Process image layers
+            for img_layer in options['image_layers']:
+                img_name = img_layer.name.replace(' ', '_')
+                export_data[f'image_{img_name}'] = img_layer.data
+            
+            # Save based on file type
+            output_path = options['output_path']
+            
+            if 'MAT' in options['file_type']:
+                # Determine MAT file version
+                if 'v7.3' in options['file_type']:
+                    # Use HDF5 format for large files
+                    savemat(output_path, export_data, 
+                           do_compression=options['compress'],
+                           format='7.3')
+                else:
+                    # Use legacy format
+                    savemat(output_path, export_data, 
+                           do_compression=options['compress'])
+            elif 'NPZ' in options['file_type']:
+                # Save as NumPy compressed archive
+                if options['compress']:
+                    np.savez_compressed(output_path, **export_data)
+                else:
+                    np.savez(output_path, **export_data)
+            
+            show_info(f"Data exported successfully to {output_path}")
             
         except ImportError:
-            show_error("scipy is required for MAT file export. Please install it with: pip install scipy")
+            show_error("scipy is required for export. Install with: pip install scipy")
         except Exception as e:
-            show_error(f"Failed to save MAT file: {str(e)}")
+            show_error(f"Export failed: {str(e)}")
+    
+    def _create_shape_mask(self, vertices, shape_type, shape):
+        """Create a binary mask from shape vertices."""
+        from skimage.draw import polygon2mask
+        
+        H, W = shape
+        
+        if shape_type in ('rectangle', 'polygon'):
+            # Use polygon2mask for accurate rasterization
+            # Ensure vertices are in Y,X order
+            if vertices.ndim == 2 and vertices.shape[1] >= 2:
+                yx_coords = vertices[:, -2:]  # Last 2 dims are Y,X
+                mask = polygon2mask((H, W), yx_coords)
+                return mask
+        elif shape_type == 'ellipse':
+            # For ellipse, vertices represent the bounding box
+            # We need to create an ellipse mask
+            from skimage.draw import ellipse
+            if vertices.shape[0] >= 2:
+                # Calculate ellipse parameters from bounding vertices
+                y_coords = vertices[:, -2]
+                x_coords = vertices[:, -1]
+                cy = (y_coords.min() + y_coords.max()) / 2
+                cx = (x_coords.min() + x_coords.max()) / 2
+                ry = (y_coords.max() - y_coords.min()) / 2
+                rx = (x_coords.max() - x_coords.min()) / 2
+                
+                # Create ellipse mask
+                mask = np.zeros((H, W), dtype=bool)
+                rr, cc = ellipse(cy, cx, ry, rx, shape=(H, W))
+                mask[rr, cc] = True
+                return mask
+        
+        return None
     
     def _on_track_points_clicked(self):
         """Open dialog for point tracking configuration."""
@@ -905,3 +1012,447 @@ class PointTrackingDialog(QDialog):
                     name = name.split(" (")[0]
                 return name
         return None
+
+
+class ExportDialog(QDialog):
+    """Comprehensive dialog for exporting motion analysis data."""
+    
+    def __init__(self, viewer: Viewer, parent=None):
+        super().__init__(parent)
+        self.viewer = viewer
+        self.parent_widget = parent
+        self.setWindowTitle("Export Motion Analysis Data")
+        self.setModal(True)
+        self.resize(600, 700)
+        
+        # Data selection tracking
+        self.selected_data = {}
+        self.estimated_size = 0
+        
+        self._init_ui()
+        self._scan_viewer_data()
+    
+    def _init_ui(self):
+        """Initialize the dialog UI."""
+        layout = QVBoxLayout()
+        
+        # Create scroll area for main content
+        scroll = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        # Data Sources Section
+        data_group = QGroupBox("Data Sources")
+        data_layout = QVBoxLayout()
+        
+        # Flow Fields (unchecked by default)
+        self.flow_tree = QTreeWidget()
+        self.flow_tree.setHeaderLabel("Flow Field Layers ⚠️ (Large files!)")
+        self.flow_tree.itemChanged.connect(self._update_size_estimate)
+        data_layout.addWidget(self.flow_tree)
+        
+        # ROI Motion Statistics
+        self.roi_tree = QTreeWidget()
+        self.roi_tree.setHeaderLabel("ROI Motion Statistics")
+        self.roi_tree.itemChanged.connect(self._update_size_estimate)
+        data_layout.addWidget(self.roi_tree)
+        
+        # Tracked Points
+        self.tracks_tree = QTreeWidget()
+        self.tracks_tree.setHeaderLabel("Tracked Points")
+        self.tracks_tree.itemChanged.connect(self._update_size_estimate)
+        data_layout.addWidget(self.tracks_tree)
+        
+        # Image Layers
+        self.image_tree = QTreeWidget()
+        self.image_tree.setHeaderLabel("Image Layers")
+        self.image_tree.itemChanged.connect(self._update_size_estimate)
+        data_layout.addWidget(self.image_tree)
+        
+        data_group.setLayout(data_layout)
+        scroll_layout.addWidget(data_group)
+        
+        # ROI Statistics Options
+        stats_group = QGroupBox("ROI Statistics Options")
+        stats_layout = QGridLayout()
+        
+        self.stat_mean = QCheckBox("Mean")
+        self.stat_mean.setChecked(True)
+        self.stat_max = QCheckBox("Max")
+        self.stat_max.setChecked(True)
+        self.stat_min = QCheckBox("Min")
+        self.stat_min.setChecked(True)
+        self.stat_std = QCheckBox("Std Dev")
+        self.stat_std.setChecked(True)
+        self.stat_median = QCheckBox("Median")
+        self.stat_median.setChecked(True)
+        self.stat_percentiles = QCheckBox("Percentiles (5,95)")
+        
+        self.roi_masks = QCheckBox("ROI Masks")
+        self.roi_masks.setChecked(True)
+        self.roi_vertices = QCheckBox("ROI Vertices")
+        self.roi_vertices.setChecked(True)
+        self.time_series = QCheckBox("Time Series")
+        self.time_series.setChecked(True)
+        
+        stats_layout.addWidget(self.stat_mean, 0, 0)
+        stats_layout.addWidget(self.stat_max, 0, 1)
+        stats_layout.addWidget(self.stat_min, 0, 2)
+        stats_layout.addWidget(self.stat_std, 1, 0)
+        stats_layout.addWidget(self.stat_median, 1, 1)
+        stats_layout.addWidget(self.stat_percentiles, 1, 2)
+        stats_layout.addWidget(self.roi_masks, 2, 0)
+        stats_layout.addWidget(self.roi_vertices, 2, 1)
+        stats_layout.addWidget(self.time_series, 2, 2)
+        
+        stats_group.setLayout(stats_layout)
+        scroll_layout.addWidget(stats_group)
+        
+        # Flow Field Options
+        flow_options_group = QGroupBox("Flow Field Options (if selected above)")
+        flow_options_layout = QVBoxLayout()
+        
+        # Warning label
+        warning_label = QLabel("⚠️ Warning: Flow fields can create very large files!\n"
+                              "   Consider downsampling or subsetting frames.")
+        warning_label.setStyleSheet("QLabel { color: #ff6600; font-weight: bold; }")
+        flow_options_layout.addWidget(warning_label)
+        
+        # Downsampling
+        downsample_layout = QHBoxLayout()
+        self.downsample_check = QCheckBox("Downsample by factor:")
+        self.downsample_spin = QSpinBox()
+        self.downsample_spin.setMinimum(2)
+        self.downsample_spin.setMaximum(16)
+        self.downsample_spin.setValue(4)
+        self.downsample_spin.setEnabled(False)
+        self.downsample_check.toggled.connect(self.downsample_spin.setEnabled)
+        self.downsample_check.toggled.connect(self._update_size_estimate)
+        self.downsample_spin.valueChanged.connect(self._update_size_estimate)
+        downsample_layout.addWidget(self.downsample_check)
+        downsample_layout.addWidget(self.downsample_spin)
+        downsample_layout.addStretch()
+        flow_options_layout.addLayout(downsample_layout)
+        
+        # Magnitude only option
+        self.magnitude_only = QCheckBox("Flow Magnitude only (reduces size by 50%)")
+        self.magnitude_only.setChecked(True)
+        self.magnitude_only.toggled.connect(self._update_size_estimate)
+        flow_options_layout.addWidget(self.magnitude_only)
+        
+        # Frame subset
+        subset_layout = QHBoxLayout()
+        self.subset_check = QCheckBox("Subset frames: Start")
+        self.subset_start = QSpinBox()
+        self.subset_start.setMinimum(0)
+        self.subset_start.setMaximum(9999)
+        self.subset_start.setEnabled(False)
+        subset_layout.addWidget(self.subset_check)
+        subset_layout.addWidget(self.subset_start)
+        subset_layout.addWidget(QLabel("End"))
+        self.subset_end = QSpinBox()
+        self.subset_end.setMinimum(1)
+        self.subset_end.setMaximum(9999)
+        self.subset_end.setValue(100)
+        self.subset_end.setEnabled(False)
+        subset_layout.addWidget(self.subset_end)
+        subset_layout.addStretch()
+        
+        self.subset_check.toggled.connect(self.subset_start.setEnabled)
+        self.subset_check.toggled.connect(self.subset_end.setEnabled)
+        self.subset_check.toggled.connect(self._update_size_estimate)
+        self.subset_start.valueChanged.connect(self._update_size_estimate)
+        self.subset_end.valueChanged.connect(self._update_size_estimate)
+        
+        flow_options_layout.addLayout(subset_layout)
+        flow_options_group.setLayout(flow_options_layout)
+        scroll_layout.addWidget(flow_options_group)
+        
+        # Export Format Options
+        format_group = QGroupBox("Export Format Options")
+        format_layout = QVBoxLayout()
+        
+        # File type
+        type_layout = QHBoxLayout()
+        type_layout.addWidget(QLabel("File Type:"))
+        self.file_type = QComboBox()
+        self.file_type.addItems(["MAT v7.3 (HDF5)", "MAT v5 (Legacy)", "NPZ (NumPy)"])
+        type_layout.addWidget(self.file_type)
+        type_layout.addStretch()
+        format_layout.addLayout(type_layout)
+        
+        # Compression
+        self.compress_check = QCheckBox("Compress data (recommended for large datasets)")
+        self.compress_check.setChecked(True)
+        format_layout.addWidget(self.compress_check)
+        
+        # Metadata
+        self.metadata_check = QCheckBox("Include metadata (timestamps, parameters, etc.)")
+        self.metadata_check.setChecked(True)
+        format_layout.addWidget(self.metadata_check)
+        
+        # Split files
+        self.split_check = QCheckBox("Split into multiple files if > 2GB")
+        format_layout.addWidget(self.split_check)
+        
+        format_group.setLayout(format_layout)
+        scroll_layout.addWidget(format_group)
+        
+        scroll.setWidget(scroll_widget)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+        
+        # Output path
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(QLabel("Output Path:"))
+        self.path_edit = QLineEdit()
+        from datetime import datetime
+        default_name = f"analysis_export_{datetime.now().strftime('%Y-%m-%d')}.mat"
+        self.path_edit.setText(default_name)
+        path_layout.addWidget(self.path_edit)
+        self.browse_btn = QPushButton("📁")
+        self.browse_btn.clicked.connect(self._browse_output)
+        path_layout.addWidget(self.browse_btn)
+        layout.addLayout(path_layout)
+        
+        # Size estimate
+        self.size_label = QLabel("Estimated file size: calculating...")
+        layout.addWidget(self.size_label)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        help_btn = QPushButton("❓ Help")
+        help_btn.clicked.connect(self._show_help)
+        button_layout.addWidget(help_btn)
+        
+        refresh_btn = QPushButton("↻ Refresh Data")
+        refresh_btn.clicked.connect(self._scan_viewer_data)
+        button_layout.addWidget(refresh_btn)
+        
+        button_layout.addStretch()
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_btn)
+        
+        self.export_btn = QPushButton("Export")
+        self.export_btn.clicked.connect(self.accept)
+        button_layout.addWidget(self.export_btn)
+        
+        layout.addLayout(button_layout)
+        self.setLayout(layout)
+    
+    def _scan_viewer_data(self):
+        """Scan viewer for available data."""
+        # Clear existing items
+        self.flow_tree.clear()
+        self.roi_tree.clear()
+        self.tracks_tree.clear()
+        self.image_tree.clear()
+        
+        # Scan for flow fields (unchecked by default)
+        for layer in self.viewer.layers:
+            if isinstance(layer, Image) and 'flow' in layer.name.lower():
+                if hasattr(layer, 'data') and layer.data.ndim == 4 and layer.data.shape[-1] == 2:
+                    item = QTreeWidgetItem(self.flow_tree)
+                    item.setText(0, f"{layer.name} ({layer.data.shape[0]}×{layer.data.shape[1]}×{layer.data.shape[2]})")
+                    item.setCheckState(0, Qt.Unchecked)  # Unchecked by default!
+                    item.setData(0, Qt.UserRole, layer)
+                    
+                    # Add size estimate
+                    size_mb = self._estimate_layer_size(layer.data)
+                    size_item = QTreeWidgetItem(item)
+                    size_item.setText(0, f"~{size_mb:.1f} MB uncompressed")
+                    size_item.setFlags(Qt.ItemIsEnabled)
+        
+        # Scan for ROI shapes (checked by default)
+        for layer in self.viewer.layers:
+            if isinstance(layer, Shapes):
+                item = QTreeWidgetItem(self.roi_tree)
+                item.setText(0, f"{layer.name} ({len(layer.data)} shapes)")
+                item.setCheckState(0, Qt.Checked)
+                item.setData(0, Qt.UserRole, layer)
+        
+        # Scan for tracks (checked by default)
+        for layer in self.viewer.layers:
+            if isinstance(layer, Tracks):
+                item = QTreeWidgetItem(self.tracks_tree)
+                n_tracks = len(np.unique(layer.data[:, 0]))
+                item.setText(0, f"{layer.name} ({n_tracks} tracks)")
+                item.setCheckState(0, Qt.Checked)
+                item.setData(0, Qt.UserRole, layer)
+        
+        # Scan for corrected images
+        for layer in self.viewer.layers:
+            if isinstance(layer, Image) and 'corrected' in layer.name.lower():
+                if hasattr(layer, 'data') and layer.data.ndim >= 3:
+                    item = QTreeWidgetItem(self.image_tree)
+                    item.setText(0, f"{layer.name} {layer.data.shape}")
+                    item.setCheckState(0, Qt.Checked)
+                    item.setData(0, Qt.UserRole, layer)
+        
+        self._update_size_estimate()
+    
+    def _estimate_layer_size(self, data):
+        """Estimate size in MB for numpy array."""
+        return data.nbytes / (1024 * 1024)
+    
+    def _update_size_estimate(self):
+        """Update the estimated file size."""
+        total_size = 0
+        
+        # Count checked flow fields
+        for i in range(self.flow_tree.topLevelItemCount()):
+            item = self.flow_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                layer = item.data(0, Qt.UserRole)
+                size = self._estimate_layer_size(layer.data)
+                
+                # Apply reductions
+                if self.downsample_check.isChecked():
+                    factor = self.downsample_spin.value()
+                    size /= (factor * factor)  # Spatial downsampling
+                
+                if self.magnitude_only.isChecked():
+                    size /= 2  # Only one channel instead of two
+                
+                if self.subset_check.isChecked():
+                    total_frames = layer.data.shape[0]
+                    subset_frames = self.subset_end.value() - self.subset_start.value()
+                    size *= (subset_frames / total_frames)
+                
+                total_size += size
+        
+        # Count other data (much smaller)
+        # ROIs: ~1KB per ROI
+        roi_count = sum(1 for i in range(self.roi_tree.topLevelItemCount()) 
+                       if self.roi_tree.topLevelItem(i).checkState(0) == Qt.Checked)
+        total_size += roi_count * 0.001
+        
+        # Tracks: ~10KB per track layer
+        track_count = sum(1 for i in range(self.tracks_tree.topLevelItemCount()) 
+                         if self.tracks_tree.topLevelItem(i).checkState(0) == Qt.Checked)
+        total_size += track_count * 0.01
+        
+        # Images
+        for i in range(self.image_tree.topLevelItemCount()):
+            item = self.image_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                layer = item.data(0, Qt.UserRole)
+                total_size += self._estimate_layer_size(layer.data)
+        
+        # Apply compression estimate
+        if self.compress_check.isChecked():
+            total_size *= 0.3  # Typical compression ratio
+        
+        # Update label
+        if total_size < 1:
+            self.size_label.setText(f"Estimated file size: ~{total_size*1024:.1f} KB")
+        elif total_size < 1024:
+            self.size_label.setText(f"Estimated file size: ~{total_size:.1f} MB")
+        else:
+            self.size_label.setText(f"Estimated file size: ~{total_size/1024:.2f} GB")
+        
+        # Add warning if flow fields are selected
+        flow_selected = any(self.flow_tree.topLevelItem(i).checkState(0) == Qt.Checked 
+                           for i in range(self.flow_tree.topLevelItemCount()))
+        if flow_selected and not self.downsample_check.isChecked():
+            self.size_label.setText(self.size_label.text() + " ⚠️ Consider enabling downsampling!")
+    
+    def _browse_output(self):
+        """Browse for output file."""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Export Data",
+            self.path_edit.text(),
+            "MAT files (*.mat);;NPZ files (*.npz)"
+        )
+        if file_path:
+            self.path_edit.setText(file_path)
+    
+    def _show_help(self):
+        """Show help information."""
+        help_text = """
+        <h3>Export Motion Analysis Data</h3>
+        
+        <h4>Data Sources:</h4>
+        <ul>
+        <li><b>Flow Fields:</b> Full optical flow data (large files!)</li>
+        <li><b>ROI Statistics:</b> Motion statistics within regions of interest</li>
+        <li><b>Tracked Points:</b> Point trajectories through time</li>
+        <li><b>Image Layers:</b> Corrected video data</li>
+        </ul>
+        
+        <h4>Tips:</h4>
+        <ul>
+        <li>Flow fields are very large - use downsampling or magnitude-only</li>
+        <li>MAT v7.3 format supports files >2GB</li>
+        <li>Compression reduces file size by ~70%</li>
+        <li>ROI statistics are usually sufficient for analysis</li>
+        </ul>
+        """
+        msg = QMessageBox()
+        msg.setWindowTitle("Export Help")
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(help_text)
+        msg.exec_()
+    
+    def get_export_options(self):
+        """Get the selected export options."""
+        options = {
+            'output_path': self.path_edit.text(),
+            'file_type': self.file_type.currentText(),
+            'compress': self.compress_check.isChecked(),
+            'include_metadata': self.metadata_check.isChecked(),
+            'split_files': self.split_check.isChecked(),
+            
+            # Statistics options
+            'stats': {
+                'mean': self.stat_mean.isChecked(),
+                'max': self.stat_max.isChecked(),
+                'min': self.stat_min.isChecked(),
+                'std': self.stat_std.isChecked(),
+                'median': self.stat_median.isChecked(),
+                'percentiles': self.stat_percentiles.isChecked(),
+            },
+            'include_roi_masks': self.roi_masks.isChecked(),
+            'include_roi_vertices': self.roi_vertices.isChecked(),
+            'include_time_series': self.time_series.isChecked(),
+            
+            # Flow options
+            'downsample': self.downsample_check.isChecked(),
+            'downsample_factor': self.downsample_spin.value() if self.downsample_check.isChecked() else 1,
+            'magnitude_only': self.magnitude_only.isChecked(),
+            'subset_frames': self.subset_check.isChecked(),
+            'frame_start': self.subset_start.value() if self.subset_check.isChecked() else 0,
+            'frame_end': self.subset_end.value() if self.subset_check.isChecked() else None,
+            
+            # Selected data
+            'flow_layers': [],
+            'roi_layers': [],
+            'track_layers': [],
+            'image_layers': [],
+        }
+        
+        # Collect selected layers
+        for i in range(self.flow_tree.topLevelItemCount()):
+            item = self.flow_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                options['flow_layers'].append(item.data(0, Qt.UserRole))
+        
+        for i in range(self.roi_tree.topLevelItemCount()):
+            item = self.roi_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                options['roi_layers'].append(item.data(0, Qt.UserRole))
+        
+        for i in range(self.tracks_tree.topLevelItemCount()):
+            item = self.tracks_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                options['track_layers'].append(item.data(0, Qt.UserRole))
+        
+        for i in range(self.image_tree.topLevelItemCount()):
+            item = self.image_tree.topLevelItem(i)
+            if item.checkState(0) == Qt.Checked:
+                options['image_layers'].append(item.data(0, Qt.UserRole))
+        
+        return options
