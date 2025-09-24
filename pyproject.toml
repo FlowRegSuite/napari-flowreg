@@ -22,7 +22,7 @@ classifiers = [
 requires-python = ">=3.10"
 
 dependencies = [
-    "pyflowreg[vis]",
+    "pyflowreg[vis]>=0.1.0a4",
     "qtpy",
     "numpy",
     "scipy>=1.10.0",
@@ -82,6 +82,7 @@ python_files = ["test_*.py"]
 markers = [
     "qt: tests requiring a Qt event loop",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests requiring napari viewer (deselect with '-m \"not integration\"')",
 ]
 addopts = [
     "-ra",
