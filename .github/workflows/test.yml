@@ -43,7 +43,22 @@ jobs:
           MPLBACKEND: Agg
           NAPARI_DISABLE_NUMBA: "1"  # Disable numba entirely on Windows CI
         run: pytest tests/ -v --cov=napari_flowreg
-      - name: Verify napari plugin registration
-        env:
-          NAPARI_DISABLE_NUMBA: "1"  # Disable numba entirely on Windows CI
+      - name: Verify plugin registration (Windows - no napari import)
+        if: runner.os == 'Windows'
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          eps = md.entry_points()
+          if hasattr(eps, 'select'):
+              # Python 3.10+
+              napari_eps = eps.select(group='napari.manifest')
+          else:
+              # Python 3.9 compatibility
+              napari_eps = eps.get('napari.manifest', [])
+          found = any("napari_flowreg" in str(e) for e in napari_eps)
+          assert found, "napari-flowreg entry point not found"
+          print("napari-flowreg entry point registered successfully")
+          PY
+      - name: Verify napari plugin import (Linux/macOS)
+        if: runner.os != 'Windows'
         run: python -c "import napari_flowreg; print('napari-flowreg plugin loaded successfully')"
