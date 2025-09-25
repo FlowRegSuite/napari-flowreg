@@ -34,17 +34,12 @@ testing = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "pytest-qt",
-    "pytest-xvfb",
-    "npe2>=0.7.0",
-    "PySide6>=6.5",
     "h5py",
     "tifffile",
-    "psutil",
-    "tomli>=2.0.1",
-    "napari[all]>=0.4.18"
+    "napari[pyqt5]>=0.4.18"
 ]
 dev = [
-    "napari[all]>=0.4.18",
+    "napari[pyqt5]>=0.4.18",
     "pre-commit",
     "black",
     "ruff",
