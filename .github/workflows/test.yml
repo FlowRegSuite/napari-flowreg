@@ -41,9 +41,9 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           MPLBACKEND: Agg
-          NUMBA_DISABLE_INTEL_SVML: "1"
+          NAPARI_DISABLE_NUMBA: "1"  # Disable numba entirely on Windows CI
         run: pytest tests/ -v --cov=napari_flowreg
       - name: Verify napari plugin registration
         env:
-          NUMBA_DISABLE_INTEL_SVML: "1"
+          NAPARI_DISABLE_NUMBA: "1"  # Disable numba entirely on Windows CI
         run: python -c "import napari_flowreg; print('napari-flowreg plugin loaded successfully')"
