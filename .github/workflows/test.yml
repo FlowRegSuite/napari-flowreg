@@ -43,7 +43,7 @@ jobs:
           MPLBACKEND: Agg
         run: pytest tests/ -v --cov=napari_flowreg
       - name: Verify napari plugin registration (Windows — entry point only)
-        if: runner.os == 'Windows'
+        if: ${{ matrix.os == 'windows-latest' }}
         run: |
           python - <<'PY'
           import importlib.metadata as md
@@ -57,5 +57,5 @@ jobs:
           print('Entry point OK')
           PY
       - name: Verify napari plugin import (non-Windows)
-        if: runner.os != 'Windows'
+        if: ${{ matrix.os != 'windows-latest' }}
         run: python -c "import napari_flowreg; print('napari-flowreg plugin loaded successfully')"
