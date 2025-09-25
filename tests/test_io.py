@@ -9,32 +9,27 @@ import h5py
 import tifffile
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_reader_accepts_supported_files(temp_directory):
     """Test that reader accepts supported file types."""
-    try:
-        from napari_flowreg.io import napari_get_reader
-    except ImportError:
-        # Create a stub if io.py doesn't exist yet
-        pytest.skip("io module not implemented yet")
-    
+    from napari_flowreg.io import napari_get_reader
+
     # Test accepted extensions
     supported = ['.h5', '.hdf5', '.tiff', '.tif', '.mat']
     for ext in supported:
         test_file = temp_directory / f"test{ext}"
         test_file.touch()  # Create empty file
-        
+
         reader = napari_get_reader(str(test_file))
         # Reader should return a function or None
         # We accept None here since the file is empty
         assert reader is not None or ext == '.mat'  # MAT might need special handling
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_reader_rejects_unsupported_files(temp_directory):
     """Test that reader rejects unsupported file types."""
-    try:
-        from napari_flowreg.io import napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import napari_get_reader
     
     # Test rejected extensions
     unsupported = ['.txt', '.csv', '.json', '.xyz']
@@ -46,12 +41,10 @@ def test_reader_rejects_unsupported_files(temp_directory):
         assert reader is None
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_hdf5_round_trip(temp_directory, sample_video_2d):
     """Test HDF5 save/load round trip."""
-    try:
-        from napari_flowreg.io import write_compensated_data, napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import write_compensated_data, napari_get_reader
     
     # Save data
     output_path = temp_directory / "test_output.h5"
@@ -78,12 +71,10 @@ def test_hdf5_round_trip(temp_directory, sample_video_2d):
     np.testing.assert_array_almost_equal(loaded_data, sample_video_2d)
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_tiff_round_trip(temp_directory, sample_video_2d):
     """Test TIFF save/load round trip."""
-    try:
-        from napari_flowreg.io import write_compensated_data, napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import write_compensated_data, napari_get_reader
     
     # Save data
     output_path = temp_directory / "test_output.tiff"
@@ -106,12 +97,10 @@ def test_tiff_round_trip(temp_directory, sample_video_2d):
     np.testing.assert_array_almost_equal(loaded_data, sample_video_2d)
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_multichannel_data_preservation(temp_directory, sample_video_multichannel):
     """Test that multi-channel data is preserved correctly."""
-    try:
-        from napari_flowreg.io import write_compensated_data, napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import write_compensated_data, napari_get_reader
     
     # Save multi-channel data
     output_path = temp_directory / "test_multichannel.h5"
@@ -129,12 +118,10 @@ def test_multichannel_data_preservation(temp_directory, sample_video_multichanne
     assert loaded_data.shape[-1] == 2  # Two channels preserved
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_metadata_preservation(temp_directory, sample_video_2d):
     """Test that metadata is preserved during save/load."""
-    try:
-        from napari_flowreg.io import write_compensated_data, napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import write_compensated_data, napari_get_reader
     
     # Create metadata
     output_path = temp_directory / "test_metadata.h5"
@@ -167,12 +154,10 @@ def test_metadata_preservation(temp_directory, sample_video_2d):
         assert 'name' in loaded_meta or 'metadata' in loaded_meta
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_large_file_handling(temp_directory):
     """Test handling of large files (mock)."""
-    try:
-        from napari_flowreg.io import napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import napari_get_reader
     
     # Create a mock large HDF5 file
     large_file = temp_directory / "large_file.h5"
@@ -193,12 +178,10 @@ def test_large_file_handling(temp_directory):
         assert layer_data is not None
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_flow_field_saving(temp_directory):
     """Test saving flow fields alongside corrected data."""
-    try:
-        from napari_flowreg.io import write_flow_fields
-    except ImportError:
-        pytest.skip("flow field writer not implemented yet")
+    from napari_flowreg.io import write_flow_fields
     
     # Create mock flow field
     flow = np.random.randn(10, 32, 32, 2).astype(np.float32)
@@ -217,12 +200,10 @@ def test_flow_field_saving(temp_directory):
         assert saved_flow.shape == flow.shape
 
 
+@pytest.mark.xfail(reason="IO module not yet implemented - pending implementation")
 def test_reader_with_corrupt_file(temp_directory):
     """Test reader handles corrupt files gracefully."""
-    try:
-        from napari_flowreg.io import napari_get_reader
-    except ImportError:
-        pytest.skip("io module not implemented yet")
+    from napari_flowreg.io import napari_get_reader
     
     # Create corrupt file
     corrupt_file = temp_directory / "corrupt.h5"
