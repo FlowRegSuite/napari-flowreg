@@ -65,7 +65,9 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
     
     # Mock the actual motion correction to simulate progress callbacks
     # compensate_arr is imported inside the worker function, so we need to patch it there
-    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate:
+    # Also patch add_image to prevent teardown errors in headless Qt6
+    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate, \
+         patch.object(widget.viewer, 'add_image', lambda *a, **k: None):
         # Simulate motion correction with progress callbacks
         def mock_correction(video, ref, options, progress_callback=None):
             # Simulate processing frames with progress updates
@@ -74,17 +76,20 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
                 if progress_callback:
                     progress_callback(i + 1, total_frames)
                 time.sleep(0.01)  # Small delay to simulate processing
-            
+
             # Return mock results
             return video, None  # Return original as "corrected" and no flow
-        
+
         mock_compensate.side_effect = mock_correction
-        
+
         # Start motion correction
         widget._on_start_clicked()
-        
-        # Wait for processing to complete
-        qtbot.waitUntil(lambda: len(progress_spy) >= 1, timeout=1000)
+
+        # Wait until we actually see 100% progress (not just "some" progress)
+        qtbot.waitUntil(
+            lambda: len(progress_spy) > 0 and int(progress_spy[-1][0]) >= 100,
+            timeout=5000
+        )
 
         # Check that progress signals were emitted
         signal_count = len(progress_spy)
@@ -97,7 +102,7 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
         
         # Check final progress is 100%
         if signal_count > 0:
-            final_progress = progress_spy[signal_count - 1][0]
+            final_progress = int(progress_spy[signal_count - 1][0])
             assert final_progress == 100, f"Final progress was {final_progress}, expected 100"
 
 
