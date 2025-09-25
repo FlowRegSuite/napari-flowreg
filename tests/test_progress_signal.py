@@ -31,11 +31,11 @@ def test_progress_signal_connection(make_napari_viewer, qtbot):
     widget.progress_val.emit(test_value)
     
     # Wait for signal processing
-    qtbot.wait(10)
-    
+    qtbot.waitUntil(lambda: len(spy) >= 1, timeout=200)
+
     # Check signal was emitted
-    assert spy.count() == 1
-    assert spy.at(0)[0] == test_value
+    assert len(spy) == 1
+    assert spy[0][0] == test_value
     
     # Check progress bar was updated
     assert widget.progress_bar.value() == test_value
@@ -84,15 +84,15 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
         widget._on_start_clicked()
         
         # Wait for processing to complete
-        qtbot.wait(500)  # Wait up to 500ms for completion
-        
+        qtbot.waitUntil(lambda: len(progress_spy) >= 1, timeout=1000)
+
         # Check that progress signals were emitted
-        signal_count = progress_spy.count()
+        signal_count = len(progress_spy)
         assert signal_count > 0, "No progress signals were emitted"
-        
+
         # Check that progress values are in expected range
         for i in range(signal_count):
-            progress_value = progress_spy.at(i)[0]
+            progress_value = progress_spy[i][0]
             assert 0 <= progress_value <= 100, f"Progress value {progress_value} out of range"
         
         # Check final progress is 100%
