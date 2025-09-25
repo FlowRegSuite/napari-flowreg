@@ -36,7 +36,7 @@ testing = [
     "pytest-qt",
     "h5py",
     "tifffile",
-    "napari[pyqt5]>=0.4.18"
+    "napari[pyqt6]"
 ]
 dev = [
     "napari[pyqt5]>=0.4.18",
