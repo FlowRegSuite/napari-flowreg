@@ -97,7 +97,7 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
         
         # Check final progress is 100%
         if signal_count > 0:
-            final_progress = progress_spy.at(signal_count - 1)[0]
+            final_progress = progress_spy[signal_count - 1][0]
             assert final_progress == 100, f"Final progress was {final_progress}, expected 100"
 
 
