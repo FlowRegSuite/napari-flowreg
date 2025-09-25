@@ -41,24 +41,21 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           MPLBACKEND: Agg
-          NAPARI_DISABLE_NUMBA: "1"  # Disable numba entirely on Windows CI
         run: pytest tests/ -v --cov=napari_flowreg
-      - name: Verify plugin registration (Windows - no napari import)
+      - name: Verify napari plugin registration (Windows — entry point only)
         if: runner.os == 'Windows'
         run: |
           python - <<'PY'
           import importlib.metadata as md
           eps = md.entry_points()
-          if hasattr(eps, 'select'):
-              # Python 3.10+
-              napari_eps = eps.select(group='napari.manifest')
-          else:
-              # Python 3.9 compatibility
-              napari_eps = eps.get('napari.manifest', [])
-          found = any("napari_flowreg" in str(e) for e in napari_eps)
-          assert found, "napari-flowreg entry point not found"
-          print("napari-flowreg entry point registered successfully")
+          try:
+              sel = eps.select(group='napari.manifest')
+          except AttributeError:
+              sel = [e for e in eps if getattr(e, 'group', '') == 'napari.manifest']
+          assert any((getattr(e, 'name', '') == 'napari-flowreg') or
+                     ('napari_flowreg' in str(e)) for e in sel), 'napari-flowreg entry point missing'
+          print('Entry point OK')
           PY
-      - name: Verify napari plugin import (Linux/macOS)
+      - name: Verify napari plugin import (non-Windows)
         if: runner.os != 'Windows'
         run: python -c "import napari_flowreg; print('napari-flowreg plugin loaded successfully')"
