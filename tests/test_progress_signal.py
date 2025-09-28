@@ -31,17 +31,17 @@ def test_progress_signal_connection(make_napari_viewer, qtbot):
     widget.progress_val.emit(test_value)
 
     # Wait for signal processing
-    qtbot.waitUntil(lambda: spy.count() >= 1, timeout=200)
+    qtbot.waitUntil(lambda: len(spy) >= 1, timeout=200)
 
     # Check signal was emitted
-    assert spy.count() == 1
-    assert spy.at(0)[0] == test_value
+    assert len(spy) == 1
+    assert spy[0][0] == test_value
     
     # Check progress bar was updated
     assert widget.progress_bar.value() == test_value
 
 
-def test_progress_callback_integration(make_napari_viewer, qtbot):
+def test_progress_callback_integration(make_napari_viewer, qtbot, monkeypatch):
     """Test progress callback updates through Qt signals during motion correction."""
     from napari_flowreg.flowreg_widget import FlowRegWidget
 
@@ -64,10 +64,12 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
     # Create signal spy to monitor progress updates
     progress_spy = QSignalSpy(widget.progress_val)
 
+    # Patch viewer.add_image to prevent adding layers during teardown
+    monkeypatch.setattr(viewer, 'add_image', MagicMock(return_value=None))
+
     # Mock the actual motion correction to simulate progress callbacks
-    # Also patch ViewerModel.add_image at the class level to prevent teardown errors
-    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate, \
-         patch('napari.components.viewer_model.ViewerModel.add_image', MagicMock(return_value=None)):
+    # compensate_arr is imported inside the worker function, so patch at source
+    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate:
         # Simulate motion correction with progress callbacks
         def mock_correction(video, ref, options, progress_callback=None):
             # Simulate processing frames with progress updates
@@ -87,7 +89,7 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
 
         # Wait for completion: we should see progress for all frames and final value should be 100
         qtbot.waitUntil(
-            lambda: progress_spy.count() >= total_frames and int(progress_spy.at(progress_spy.count()-1)[0]) >= 100,
+            lambda: len(progress_spy) >= total_frames and int(progress_spy[-1][0]) >= 100,
             timeout=5000
         )
 
@@ -95,16 +97,16 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
         qtbot.waitUntil(lambda: widget.start_button.isEnabled(), timeout=5000)
 
     # Check that progress signals were emitted for all frames
-    signal_count = progress_spy.count()
+    signal_count = len(progress_spy)
     assert signal_count >= total_frames, f"Expected at least {total_frames} signals, got {signal_count}"
 
     # Check that progress values are in expected range
     for i in range(signal_count):
-        progress_value = int(progress_spy.at(i)[0])
+        progress_value = int(progress_spy[i][0])
         assert 0 <= progress_value <= 100, f"Progress value {progress_value} out of range"
 
     # Check final progress is 100%
-    final_progress = int(progress_spy.at(signal_count - 1)[0])
+    final_progress = int(progress_spy[-1][0])
     assert final_progress == 100, f"Final progress was {final_progress}, expected 100"
 
 
