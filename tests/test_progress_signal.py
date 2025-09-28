@@ -41,7 +41,7 @@ def test_progress_signal_connection(make_napari_viewer, qtbot):
     assert widget.progress_bar.value() == test_value
 
 
-def test_progress_callback_integration(make_napari_viewer, qtbot, monkeypatch):
+def test_progress_callback_integration(make_napari_viewer, qtbot):
     """Test progress callback updates through Qt signals during motion correction."""
     from napari_flowreg.flowreg_widget import FlowRegWidget
 
@@ -64,12 +64,10 @@ def test_progress_callback_integration(make_napari_viewer, qtbot, monkeypatch):
     # Create signal spy to monitor progress updates
     progress_spy = QSignalSpy(widget.progress_val)
 
-    # Patch viewer.add_image to prevent adding layers during teardown
-    monkeypatch.setattr(viewer, 'add_image', MagicMock(return_value=None))
-
     # Mock the actual motion correction to simulate progress callbacks
-    # compensate_arr is imported inside the worker function, so patch at source
-    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate:
+    # Also patch ViewerModel.add_image at class level to prevent teardown errors
+    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate, \
+         patch('napari.components.viewer_model.ViewerModel.add_image', MagicMock(return_value=None)):
         # Simulate motion correction with progress callbacks
         def mock_correction(video, ref, options, progress_callback=None):
             # Simulate processing frames with progress updates
