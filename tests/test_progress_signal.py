@@ -26,16 +26,16 @@ def test_progress_signal_connection(make_napari_viewer, qtbot):
     
     # Create signal spy to monitor emissions
     spy = QSignalSpy(widget.progress_val)
-    
+
     # Emit signal
     widget.progress_val.emit(test_value)
-    
+
     # Wait for signal processing
-    qtbot.waitUntil(lambda: len(spy) >= 1, timeout=200)
+    qtbot.waitUntil(lambda: spy.count() >= 1, timeout=200)
 
     # Check signal was emitted
-    assert len(spy) == 1
-    assert spy[0][0] == test_value
+    assert spy.count() == 1
+    assert spy.at(0)[0] == test_value
     
     # Check progress bar was updated
     assert widget.progress_bar.value() == test_value
@@ -65,18 +65,17 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
     progress_spy = QSignalSpy(widget.progress_val)
 
     # Mock the actual motion correction to simulate progress callbacks
-    # compensate_arr is imported inside the worker function, so we need to patch it there
-    # Also patch add_image class method to prevent teardown errors in headless Qt6
+    # Also patch ViewerModel.add_image at the class level to prevent teardown errors
     with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate, \
-         patch('napari.components.viewer_model.ViewerModel.add_image', lambda self, *a, **k: None):
+         patch('napari.components.viewer_model.ViewerModel.add_image', MagicMock(return_value=None)):
         # Simulate motion correction with progress callbacks
         def mock_correction(video, ref, options, progress_callback=None):
             # Simulate processing frames with progress updates
-            total_frames = video.shape[0]
-            for i in range(total_frames):
+            n = video.shape[0]
+            for i in range(n):
                 if progress_callback:
-                    progress_callback(i + 1, total_frames)
-                time.sleep(0.01)  # Small delay to simulate processing
+                    progress_callback(i + 1, n)
+                time.sleep(0.005)  # Small delay to simulate processing
 
             # Return mock results
             return video, None  # Return original as "corrected" and no flow
@@ -88,22 +87,25 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
 
         # Wait for completion: we should see progress for all frames and final value should be 100
         qtbot.waitUntil(
-            lambda: len(progress_spy) >= total_frames and int(progress_spy[-1][0]) >= 100,
+            lambda: progress_spy.count() >= total_frames and int(progress_spy.at(progress_spy.count()-1)[0]) >= 100,
             timeout=5000
         )
 
-        # Check that progress signals were emitted for all frames
-        signal_count = len(progress_spy)
-        assert signal_count >= total_frames, f"Expected at least {total_frames} signals, got {signal_count}"
+        # Ensure the completion handler finished and UI reset occurred
+        qtbot.waitUntil(lambda: widget.start_button.isEnabled(), timeout=5000)
 
-        # Check that progress values are in expected range
-        for i in range(signal_count):
-            progress_value = int(progress_spy[i][0])
-            assert 0 <= progress_value <= 100, f"Progress value {progress_value} out of range"
+    # Check that progress signals were emitted for all frames
+    signal_count = progress_spy.count()
+    assert signal_count >= total_frames, f"Expected at least {total_frames} signals, got {signal_count}"
 
-        # Check final progress is 100%
-        final_progress = int(progress_spy[signal_count - 1][0])
-        assert final_progress == 100, f"Final progress was {final_progress}, expected 100"
+    # Check that progress values are in expected range
+    for i in range(signal_count):
+        progress_value = int(progress_spy.at(i)[0])
+        assert 0 <= progress_value <= 100, f"Progress value {progress_value} out of range"
+
+    # Check final progress is 100%
+    final_progress = int(progress_spy.at(signal_count - 1)[0])
+    assert final_progress == 100, f"Final progress was {final_progress}, expected 100"
 
 
 def test_progress_callback_thread_safety(make_napari_viewer, qtbot):

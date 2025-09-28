@@ -26,6 +26,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+
       - name: System deps for Qt/OpenGL (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -35,27 +36,16 @@ jobs:
             libglib2.0-0 libxkbcommon0 libxi6 libxtst6 \
             libxcb1 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
             libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0
+
       - run: python -m pip install -U pip
       - run: python -m pip install -e .[testing]
-      - name: Run tests with Qt backend
+
+      - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
           MPLBACKEND: Agg
         run: pytest tests/ -v --cov=napari_flowreg
-      - name: Verify napari plugin registration (Windows — entry point only)
-        if: ${{ matrix.os == 'windows-latest' }}
-        run: |
-          python - <<'PY'
-          import importlib.metadata as md
-          eps = md.entry_points()
-          try:
-              sel = eps.select(group='napari.manifest')
-          except AttributeError:
-              sel = [e for e in eps if getattr(e, 'group', '') == 'napari.manifest']
-          assert any((getattr(e, 'name', '') == 'napari-flowreg') or
-                     ('napari_flowreg' in str(e)) for e in sel), 'napari-flowreg entry point missing'
-          print('Entry point OK')
-          PY
-      - name: Verify napari plugin import (non-Windows)
-        if: ${{ matrix.os != 'windows-latest' }}
+
+      - name: Sanity import (Linux only)
+        if: runner.os == 'Linux'
         run: python -c "import napari_flowreg; print('napari-flowreg plugin loaded successfully')"

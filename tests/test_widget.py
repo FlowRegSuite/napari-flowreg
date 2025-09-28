@@ -11,18 +11,21 @@ from qtpy.QtCore import Qt
 def test_widget_creation(make_napari_viewer_proxy):
     """Test that widget can be created and added to viewer."""
     from napari_flowreg.flowreg_widget import FlowRegWidget
-    
+
     viewer = make_napari_viewer_proxy
-    
+
     # Create widget
     widget = FlowRegWidget(viewer)
     assert widget is not None
-    
+
     # Add to viewer
     viewer.window.add_dock_widget(widget, name="FlowReg")
-    
-    # Check widget is in the viewer
-    assert "FlowReg" in viewer.window._dock_widgets
+
+    # Check widget is in the viewer using public API
+    dock_widgets = getattr(viewer.window, "dock_widgets", {})
+    # dock_widgets is a WeakValueDictionary, so just check keys
+    names = list(dock_widgets.keys()) if hasattr(dock_widgets, 'keys') else []
+    assert any("FlowReg" in str(n) for n in names)
 
 
 def test_widget_ui_elements(make_napari_viewer_proxy):
