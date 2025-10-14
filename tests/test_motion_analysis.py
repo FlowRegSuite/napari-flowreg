@@ -5,7 +5,7 @@ Tests actual functionality, not mocked behavior.
 
 import pytest
 import numpy as np
-from napari_flowreg.motion_analysis_widget import MotionAnalysisWidget
+from napari_flowreg.motion_analysis import MotionAnalysisWidget
 
 
 class TestBilinearInterpolation:

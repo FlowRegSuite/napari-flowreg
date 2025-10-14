@@ -34,6 +34,9 @@ class FlowRegWidget(QWidget):
         super().__init__()
         self.viewer = napari_viewer
         self.current_options = None
+        # Store references to dock widgets to avoid using private _dock_widgets API
+        self._viz_dock_widget = None
+        self._analysis_dock_widget = None
         self._init_ui()
         self.progress_val.connect(self.progress_bar.setValue)
         
@@ -572,45 +575,57 @@ class FlowRegWidget(QWidget):
     def _on_show_visualization(self):
         """Show or hide the flow visualization widget."""
         from napari_flowreg.flow_visualization_widget import FlowVisualizationWidget
-        
-        # Check if visualization widget already exists
-        widget_name = "Flow Visualization"
-        if widget_name in self.viewer.window._dock_widgets:
+
+        # Check if visualization widget already exists and is still valid
+        if self._viz_dock_widget is not None:
             # Toggle visibility
-            dock_widget = self.viewer.window._dock_widgets[widget_name]
-            dock_widget.setVisible(not dock_widget.isVisible())
-            
-            # Update button text
-            if dock_widget.isVisible():
-                self.show_viz_button.setText("Hide Flow Visualization")
-            else:
-                self.show_viz_button.setText("Show Flow Visualization")
-        else:
+            try:
+                is_visible = self._viz_dock_widget.isVisible()
+                self._viz_dock_widget.setVisible(not is_visible)
+
+                # Update button text
+                if self._viz_dock_widget.isVisible():
+                    self.show_viz_button.setText("Hide Flow Visualization")
+                else:
+                    self.show_viz_button.setText("Show Flow Visualization")
+            except (RuntimeError, AttributeError):
+                # Widget was deleted, create a new one
+                self._viz_dock_widget = None
+
+        if self._viz_dock_widget is None:
             # Create new visualization widget
             viz_widget = FlowVisualizationWidget(self.viewer)
-            self.viewer.window.add_dock_widget(viz_widget, name=widget_name, area="right")
+            self._viz_dock_widget = self.viewer.window.add_dock_widget(
+                viz_widget, name="Flow Visualization", area="right"
+            )
             self.show_viz_button.setText("Hide Flow Visualization")
     
     def _on_show_analysis(self):
         """Show or hide the motion analysis widget."""
-        from napari_flowreg.motion_analysis_widget import MotionAnalysisWidget
-        
-        # Check if analysis widget already exists
-        widget_name = "Motion Analysis"
-        if widget_name in self.viewer.window._dock_widgets:
+        from napari_flowreg.motion_analysis import MotionAnalysisWidget
+
+        # Check if analysis widget already exists and is still valid
+        if self._analysis_dock_widget is not None:
             # Toggle visibility
-            dock_widget = self.viewer.window._dock_widgets[widget_name]
-            dock_widget.setVisible(not dock_widget.isVisible())
-            
-            # Update button text
-            if dock_widget.isVisible():
-                self.show_analysis_button.setText("Hide Motion Analysis")
-            else:
-                self.show_analysis_button.setText("Show Motion Analysis")
-        else:
+            try:
+                is_visible = self._analysis_dock_widget.isVisible()
+                self._analysis_dock_widget.setVisible(not is_visible)
+
+                # Update button text
+                if self._analysis_dock_widget.isVisible():
+                    self.show_analysis_button.setText("Hide Motion Analysis")
+                else:
+                    self.show_analysis_button.setText("Show Motion Analysis")
+            except (RuntimeError, AttributeError):
+                # Widget was deleted, create a new one
+                self._analysis_dock_widget = None
+
+        if self._analysis_dock_widget is None:
             # Create new analysis widget
             analysis_widget = MotionAnalysisWidget(self.viewer)
-            self.viewer.window.add_dock_widget(analysis_widget, name=widget_name, area="right")
+            self._analysis_dock_widget = self.viewer.window.add_dock_widget(
+                analysis_widget, name="Motion Analysis", area="right"
+            )
             self.show_analysis_button.setText("Hide Motion Analysis")
         
     def log(self, message: str):

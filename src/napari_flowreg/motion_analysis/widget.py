@@ -3,13 +3,15 @@ Motion Analysis Widget for napari-flowreg
 Provides analysis tools for optical flow fields
 """
 
+import os
+import sys
 from typing import Optional, List, Tuple, Union, Dict, Any
 import numpy as np
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox,
     QPushButton, QLabel, QComboBox, QGridLayout,
     QCheckBox, QFileDialog, QMessageBox, QDialog, QDialogButtonBox,
-    QTreeWidget, QTreeWidgetItem, QScrollArea, QSpinBox, QLineEdit
+    QTreeWidget, QTreeWidgetItem, QScrollArea, QSpinBox, QLineEdit, QProgressBar
 )
 from qtpy.QtCore import Qt, Signal
 from napari.viewer import Viewer
@@ -21,6 +23,14 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from skimage.draw import polygon2mask
 from scipy.interpolate import RegularGridInterpolator
+
+# Import batch processing integration
+from .integration import (
+    create_mode_selector_group,
+    add_batch_processing_options,
+    handle_mode_change,
+    create_batch_processor_for_widget
+)
 
 
 class MotionAnalysisWidget(QWidget):
@@ -36,35 +46,59 @@ class MotionAnalysisWidget(QWidget):
         self.motion_data = None  # Store computed motion data for export
         self.tracked_points = {}  # Store tracked point trajectories
         self.roi_shapes_data = {}  # Store individual ROI data
+
+        # Add processing mode tracking
+        self.current_processing_mode = 0  # Default to online mode
+        self.video_combo = None  # Will be set if batch mode needs it
+
         self._init_ui()
-        
+
         # Connect to layer events
         self.viewer.layers.events.inserted.connect(self._on_layers_changed)
         self.viewer.layers.events.removed.connect(self._on_layers_changed)
-        
+
         # Initial update of layer lists
         self._update_layer_lists()
         
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout()
-        
+
+        # Add mode selector at the top (NEW)
+        mode_group = create_mode_selector_group()
+        layout.addWidget(mode_group)
+
+        # Store references
+        self.mode_combo = mode_group.mode_combo
+        self.mode_info = mode_group.mode_info
+        self.memory_label = mode_group.memory_label
+
+        # Connect mode change signal
+        self.mode_combo.currentIndexChanged.connect(
+            lambda idx: handle_mode_change(self, idx)
+        )
+
         # Data selection
         data_selection_group = self._create_data_selection_group()
         layout.addWidget(data_selection_group)
-        
+
+        # Add batch processing options (initially hidden) (NEW)
+        batch_group = add_batch_processing_options(layout, 2)
+        layout.addWidget(batch_group)
+        self.batch_processing_group = batch_group
+
         # Analysis options
         analysis_options_group = self._create_analysis_options_group()
         layout.addWidget(analysis_options_group)
-        
+
         # Controls
         controls_group = self._create_controls_group()
         layout.addWidget(controls_group)
-        
+
         # Plot area
         plot_group = self._create_plot_group()
         layout.addWidget(plot_group)
-        
+
         layout.addStretch()
         self.setLayout(layout)
         
@@ -72,26 +106,32 @@ class MotionAnalysisWidget(QWidget):
         """Create data selection section."""
         group = QGroupBox("Data Selection")
         layout = QGridLayout()
-        
+
+        # Video input dropdown (for batch modes) (NEW)
+        layout.addWidget(QLabel("Video Input:"), 0, 0)
+        self.video_combo = QComboBox()
+        self.video_combo.setToolTip("Select video layer for batch processing")
+        layout.addWidget(self.video_combo, 0, 1)
+
         # Flow field dropdown (w image)
-        layout.addWidget(QLabel("Flow Field (w):"), 0, 0)
+        layout.addWidget(QLabel("Flow Field (w):"), 1, 0)
         self.flow_combo = QComboBox()
         self.flow_combo.setToolTip("Select the flow field data (displacement field)")
         self.flow_combo.currentTextChanged.connect(self._on_flow_layer_changed)
-        layout.addWidget(self.flow_combo, 0, 1)
-        
+        layout.addWidget(self.flow_combo, 1, 1)
+
         # ROI selection dropdown (optional)
-        layout.addWidget(QLabel("ROI (optional):"), 1, 0)
+        layout.addWidget(QLabel("ROI (optional):"), 2, 0)
         self.roi_combo = QComboBox()
         self.roi_combo.setToolTip("Select a Shapes layer to define region of interest")
         self.roi_combo.currentTextChanged.connect(self._on_roi_layer_changed)
-        layout.addWidget(self.roi_combo, 1, 1)
-        
+        layout.addWidget(self.roi_combo, 2, 1)
+
         # Info label
         self.data_info_label = QLabel("No flow field selected")
         self.data_info_label.setStyleSheet("QLabel { color: gray; }")
-        layout.addWidget(self.data_info_label, 2, 0, 1, 2)
-        
+        layout.addWidget(self.data_info_label, 3, 0, 1, 2)
+
         group.setLayout(layout)
         return group
         
@@ -99,14 +139,14 @@ class MotionAnalysisWidget(QWidget):
         """Create analysis options section."""
         group = QGroupBox("Analysis Options")
         layout = QGridLayout()
-        
+
         # Analysis mode
         layout.addWidget(QLabel("Statistic Mode:"), 0, 0)
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["mean", "max", "min"])
-        self.mode_combo.setCurrentText("mean")
-        self.mode_combo.setToolTip("Statistical measure to compute over ROI or entire image")
-        layout.addWidget(self.mode_combo, 0, 1)
+        self.stat_mode_combo = QComboBox()
+        self.stat_mode_combo.addItems(["mean", "max", "min"])
+        self.stat_mode_combo.setCurrentText("mean")
+        self.stat_mode_combo.setToolTip("Statistical measure to compute over ROI or entire image")
+        layout.addWidget(self.stat_mode_combo, 0, 1)
         
         # Plot type
         layout.addWidget(QLabel("Plot Type:"), 1, 0)
@@ -150,7 +190,16 @@ class MotionAnalysisWidget(QWidget):
         self.stats_label = QLabel("Statistics will appear here")
         self.stats_label.setStyleSheet("QLabel { font-family: monospace; }")
         layout.addWidget(self.stats_label)
-        
+
+        # Progress bar for batch processing (initially hidden)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("Processing: %p% (%v/%m frames)")
+        self.progress_bar.hide()  # Hidden by default
+        layout.addWidget(self.progress_bar)
+
         group.setLayout(layout)
         return group
         
@@ -172,15 +221,25 @@ class MotionAnalysisWidget(QWidget):
         # Save current selections
         current_flow = self.flow_combo.currentText()
         current_roi = self.roi_combo.currentText()
-        
+        current_video = self.video_combo.currentText() if hasattr(self, 'video_combo') else ""
+
+        # Update video combo (NEW)
+        if hasattr(self, 'video_combo'):
+            self.video_combo.clear()
+            self.video_combo.addItem("")  # Empty option
+
         # Update flow combo
         self.flow_combo.clear()
         self.flow_combo.addItem("")  # Empty option
-        
-        image_layers = [layer.name for layer in self.viewer.layers 
+
+        image_layers = [layer.name for layer in self.viewer.layers
                        if isinstance(layer, Image)]
+
+        # Add to both video and flow combos
+        if hasattr(self, 'video_combo'):
+            self.video_combo.addItems(image_layers)
         self.flow_combo.addItems(image_layers)
-        
+
         # Try to auto-select flow field
         flow_found = False
         for layer_name in image_layers:
@@ -188,18 +247,30 @@ class MotionAnalysisWidget(QWidget):
                 self.flow_combo.setCurrentText(layer_name)
                 flow_found = True
                 break
-        
+
         if not flow_found and current_flow in image_layers:
             self.flow_combo.setCurrentText(current_flow)
-            
+
+        # Try to auto-select video
+        if hasattr(self, 'video_combo'):
+            video_found = False
+            for layer_name in image_layers:
+                if any(x in layer_name.lower() for x in ["video", "movie", "stack", "raw"]):
+                    self.video_combo.setCurrentText(layer_name)
+                    video_found = True
+                    break
+
+            if not video_found and current_video in image_layers:
+                self.video_combo.setCurrentText(current_video)
+
         # Update ROI combo
         self.roi_combo.clear()
         self.roi_combo.addItem("")  # Empty option for no ROI
-        
-        shapes_layers = [layer.name for layer in self.viewer.layers 
+
+        shapes_layers = [layer.name for layer in self.viewer.layers
                         if isinstance(layer, Shapes)]
         self.roi_combo.addItems(shapes_layers)
-        
+
         if current_roi in shapes_layers:
             self.roi_combo.setCurrentText(current_roi)
             
@@ -258,32 +329,49 @@ class MotionAnalysisWidget(QWidget):
             self.current_roi_layer = None
             
     def _get_individual_roi_masks(self, hw: Tuple[int, int]) -> Dict[int, Dict[str, Any]]:
-        """Get individual ROI masks from shapes layer, one for each shape."""
+        """Get individual ROI masks from shapes layer with proper coordinate transformation."""
         if self.current_roi_layer is None or len(self.current_roi_layer.data) == 0:
             return {}
-        
+
         H, W = hw
         shp = self.current_roi_layer
         idxs = list(shp.selected_data) if len(shp.selected_data) > 0 else list(range(len(shp.data)))
         types = getattr(shp, "shape_types", None)
-        
+
         roi_dict = {}
         for i in idxs:
             # Skip non-polygon shapes (e.g., points, ellipses)
             if types is not None and types[i] not in {"rectangle", "polygon"}:
                 continue
-                
+
             mask = np.zeros((H, W), dtype=bool)
             raw_pts = shp.data[i]
-            
-            # Extract spatial coordinates
-            ys = raw_pts[:, -2]
-            xs = raw_pts[:, -1]
-            
+
+            # Apply coordinate transforms if available
+            # Shapes → world → target data space
+            if self.current_flow_layer is not None and hasattr(shp, 'data_to_world') and hasattr(self.current_flow_layer, 'world_to_data'):
+                # Transform to world coordinates
+                world_pts = shp.data_to_world(raw_pts)
+                # Handle tuple returns from transforms
+                if isinstance(world_pts, tuple):
+                    world_pts = np.stack(world_pts, axis=1)
+                # Transform to target layer data coordinates
+                data_pts = self.current_flow_layer.world_to_data(world_pts)
+                # Handle tuple returns
+                if isinstance(data_pts, tuple):
+                    data_pts = np.stack(data_pts, axis=1)
+                # Extract spatial coordinates from transformed points
+                ys = data_pts[:, -2]
+                xs = data_pts[:, -1]
+            else:
+                # No transforms available - use raw coordinates
+                ys = raw_pts[:, -2]
+                xs = raw_pts[:, -1]
+
             # Clip to bounds
             ys = np.clip(ys, 0, H - 1)
             xs = np.clip(xs, 0, W - 1)
-            
+
             # Create polygon mask
             poly = np.stack([ys, xs], axis=1)
             mask = polygon2mask((H, W), poly)
@@ -319,27 +407,121 @@ class MotionAnalysisWidget(QWidget):
             idxs = [i for i in idxs if types[i] in {"rectangle", "polygon"}]
         mask = np.zeros((H, W), dtype=bool)
         for i in idxs:
-            # Get raw shape points - these are in nD coordinates where the last 2 dimensions are spatial (Y, X)
+            # Get raw shape points
             raw_pts = shp.data[i]
-            
-            # Extract the spatial coordinates from the last two dimensions
-            # For 4D shapes (e.g., from 4D flow layer), this gets columns -2 and -1
-            # which contain the actual Y and X coordinates respectively
-            ys = raw_pts[:, -2]  # Second-to-last column is Y
-            xs = raw_pts[:, -1]  # Last column is X
-            
+
+            # Apply coordinate transforms if available
+            # Shapes → world → target data space
+            if self.current_flow_layer is not None and hasattr(shp, 'data_to_world') and hasattr(self.current_flow_layer, 'world_to_data'):
+                # Transform to world coordinates
+                world_pts = shp.data_to_world(raw_pts)
+                # Handle tuple returns from transforms
+                if isinstance(world_pts, tuple):
+                    world_pts = np.stack(world_pts, axis=1)
+                # Transform to target layer data coordinates
+                data_pts = self.current_flow_layer.world_to_data(world_pts)
+                # Handle tuple returns
+                if isinstance(data_pts, tuple):
+                    data_pts = np.stack(data_pts, axis=1)
+                # Extract spatial coordinates from transformed points
+                ys = data_pts[:, -2]
+                xs = data_pts[:, -1]
+            else:
+                # No transforms available - use raw coordinates
+                # Extract the spatial coordinates from the last two dimensions
+                ys = raw_pts[:, -2]  # Second-to-last column is Y
+                xs = raw_pts[:, -1]  # Last column is X
+
             # Clip to image bounds
             ys = np.clip(ys, 0, H - 1)
             xs = np.clip(xs, 0, W - 1)
-            
+
             # Create polygon for mask
             poly = np.stack([ys, xs], axis=1)
             mask |= polygon2mask((H, W), poly)
-            
+
         return mask if mask.any() else None
         
     def _on_analyze_clicked(self):
         """Perform motion analysis and create plot."""
+        # Check if we're in batch processing mode (NEW)
+        if hasattr(self, 'current_processing_mode') and self.current_processing_mode > 0:
+            # Batch mode - use batch processor
+            worker_func = create_batch_processor_for_widget(self)
+            if worker_func:
+                worker = worker_func
+
+                # Show and reset progress bar
+                self.progress_bar.setValue(0)
+                self.progress_bar.show()
+
+                # Connect progress signaler if available
+                if hasattr(worker, 'progress_signaler'):
+                    def update_progress(current, total):
+                        """Update progress bar from worker thread."""
+                        self.progress_bar.setMaximum(total)
+                        self.progress_bar.setValue(current)
+
+                    worker.progress_signaler.progress_updated.connect(update_progress)
+
+                def on_complete(results):
+                    # Hide progress bar
+                    self.progress_bar.hide()
+
+                    # Only add w to viewer if user requested to load it
+                    if results and results.get('w') is not None:
+                        # Check if user wanted to load w (from checkbox)
+                        load_w = False
+                        if hasattr(self, 'batch_processing_group'):
+                            load_w = self.batch_processing_group.load_w_check.isChecked()
+
+                        if load_w:
+                            # Add w to viewer
+                            self.viewer.add_image(
+                                results['w'],
+                                name="Computed w",
+                                colormap="turbo"
+                            )
+                            # Set as current flow layer
+                            self.current_flow_layer = self.viewer.layers[-1]
+                            self.flow_combo.setCurrentText("Computed w")
+
+                            # Now run original analysis
+                            self._perform_original_analysis()
+
+                    if results and results.get('tracks') is not None:
+                        # Add tracks to viewer (computed during batch processing)
+                        self.viewer.add_tracks(
+                            results['tracks'],
+                            name="Batch_Trajectories",
+                            colormap="turbo",
+                            tail_length=10,
+                            tail_width=2
+                        )
+                        show_info("Trajectories computed on-the-fly during batch processing")
+
+                    if results and results.get('roi_stats'):
+                        show_info("ROI statistics computed during batch processing")
+
+                def on_error(e):
+                    # Hide progress bar on error
+                    self.progress_bar.hide()
+                    show_error(f"Batch processing failed: {str(e)}")
+
+                worker.returned.connect(on_complete)
+                worker.errored.connect(on_error)
+                worker.start()
+                return
+
+        # Original online mode
+        if self.current_flow_layer is None:
+            show_error("Please select a flow field layer first")
+            return
+
+        self._perform_original_analysis()
+
+    def _perform_original_analysis(self):
+        """Perform the original motion analysis (extracted from _on_analyze_clicked)."""
         if self.current_flow_layer is None:
             show_error("Please select a flow field layer first")
             return
@@ -348,7 +530,7 @@ class MotionAnalysisWidget(QWidget):
         if self.viewer.dims.ndisplay != 2:
             show_error("Set viewer to 2D (two displayed axes) before analysis.")
             return
-            
+
         flow = self.current_flow_layer.data
         if flow.ndim == 4 and flow.shape[-1] == 2:
             u, v = flow[..., 0], flow[..., 1]
@@ -388,9 +570,9 @@ class MotionAnalysisWidget(QWidget):
                     print(f"  - Size: {y_max-y_min+1} x {x_max-x_min+1} pixels")
                     print(f"  - Total pixels: {roi_pixels}")
                     print(f"  - Coverage: {100*roi_pixels/roi_mask.size:.1f}% of image")
-                
+
         # Compute statistics based on mode
-        mode = self.mode_combo.currentText()
+        mode = self.stat_mode_combo.currentText()
         
         if mag.ndim == 3:  # Video data (T, H, W)
             n_frames = mag.shape[0]
@@ -651,26 +833,55 @@ class MotionAnalysisWidget(QWidget):
             
             # Save based on file type
             output_path = options['output_path']
-            
+
             if 'MAT' in options['file_type']:
                 # Determine MAT file version
                 if 'v7.3' in options['file_type']:
-                    # Use HDF5 format for large files
-                    savemat(output_path, export_data, 
-                           do_compression=options['compress'],
-                           format='7.3')
+                    # MAT v7.3 is HDF5-based and requires h5py
+                    try:
+                        import h5py
+
+                        # Save as HDF5 file (MAT v7.3 format)
+                        with h5py.File(output_path, 'w') as f:
+                            def _save_to_hdf5(group, data_dict):
+                                """Recursively save dict to HDF5 group."""
+                                for key, value in data_dict.items():
+                                    if isinstance(value, dict):
+                                        subgroup = group.create_group(key)
+                                        _save_to_hdf5(subgroup, value)
+                                    elif isinstance(value, np.ndarray):
+                                        # Save arrays with optional compression
+                                        if options['compress']:
+                                            group.create_dataset(key, data=value, compression='gzip', compression_opts=4)
+                                        else:
+                                            group.create_dataset(key, data=value)
+                                    elif isinstance(value, (str, int, float)):
+                                        group.attrs[key] = value
+                                    elif isinstance(value, list):
+                                        # Convert list to array for storage
+                                        group.create_dataset(key, data=np.array(value))
+
+                            _save_to_hdf5(f, export_data)
+
+                        show_info(f"Data exported successfully to {output_path} (MAT v7.3 / HDF5)")
+
+                    except ImportError:
+                        # Fallback to MAT v5 if h5py not available
+                        show_error("h5py not available for MAT v7.3 export. Falling back to MAT v5 format.")
+                        savemat(output_path, export_data, do_compression=options['compress'])
+                        show_info(f"Data exported to {output_path} (MAT v5 - h5py not available for v7.3)")
                 else:
-                    # Use legacy format
-                    savemat(output_path, export_data, 
-                           do_compression=options['compress'])
+                    # Use SciPy for MAT v5 (legacy format, <2GB)
+                    savemat(output_path, export_data, do_compression=options['compress'])
+                    show_info(f"Data exported successfully to {output_path} (MAT v5)")
+
             elif 'NPZ' in options['file_type']:
                 # Save as NumPy compressed archive
                 if options['compress']:
                     np.savez_compressed(output_path, **export_data)
                 else:
                     np.savez(output_path, **export_data)
-            
-            show_info(f"Data exported successfully to {output_path}")
+                show_info(f"Data exported successfully to {output_path} (NPZ)")
             
         except ImportError:
             show_error("scipy is required for export. Install with: pip install scipy")
