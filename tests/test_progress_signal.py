@@ -30,12 +30,13 @@ def test_progress_signal_connection(make_napari_viewer, qtbot):
     # Emit signal
     widget.progress_val.emit(test_value)
 
-    # Wait for signal processing
-    qtbot.waitUntil(lambda: len(spy) >= 1, timeout=200)
+    # Wait for signal processing (PySide6 uses count() not len())
+    qtbot.waitUntil(lambda: spy.count() >= 1, timeout=200)
 
     # Check signal was emitted
-    assert len(spy) == 1
-    assert spy[0][0] == test_value
+    assert spy.count() == 1
+    # PySide6 uses .at(index) not subscripting
+    assert spy.at(0)[0] == test_value
     
     # Check progress bar was updated
     assert widget.progress_bar.value() == test_value
@@ -86,8 +87,9 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
         widget._on_start_clicked()
 
         # Wait for completion: we should see progress for all frames and final value should be 100
+        # PySide6 uses count() not len(), and .at(index) not subscripting
         qtbot.waitUntil(
-            lambda: len(progress_spy) >= total_frames and int(progress_spy[-1][0]) >= 100,
+            lambda: progress_spy.count() >= total_frames and progress_spy.count() > 0 and int(progress_spy.at(progress_spy.count()-1)[0]) >= 100,
             timeout=5000
         )
 
@@ -95,16 +97,16 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
         qtbot.waitUntil(lambda: widget.start_button.isEnabled(), timeout=5000)
 
     # Check that progress signals were emitted for all frames
-    signal_count = len(progress_spy)
+    signal_count = progress_spy.count()
     assert signal_count >= total_frames, f"Expected at least {total_frames} signals, got {signal_count}"
 
-    # Check that progress values are in expected range
+    # Check that progress values are in expected range (PySide6 uses .at(index))
     for i in range(signal_count):
-        progress_value = int(progress_spy[i][0])
+        progress_value = int(progress_spy.at(i)[0])
         assert 0 <= progress_value <= 100, f"Progress value {progress_value} out of range"
 
     # Check final progress is 100%
-    final_progress = int(progress_spy[-1][0])
+    final_progress = int(progress_spy.at(signal_count - 1)[0])
     assert final_progress == 100, f"Final progress was {final_progress}, expected 100"
 
 

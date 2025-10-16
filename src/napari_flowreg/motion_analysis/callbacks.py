@@ -433,4 +433,4 @@ def extract_seed_points_from_layer(layer):
         if points:
             return np.vstack(points)
 
-    return np.array([])  # Empty array if no points found
+    return np.empty((0, 2))  # Empty array with consistent shape (N, 2)

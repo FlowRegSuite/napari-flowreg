@@ -113,16 +113,38 @@ def add_batch_processing_options(parent_layout, after_widget_index=1):
     load_w_check.setStyleSheet("QCheckBox { color: orange; }")
     batch_layout.addWidget(load_w_check, 4, 0, 1, 2)
 
+    # Video file input (for file-based modes)
+    batch_layout.addWidget(QLabel("Video file:"), 5, 0)
+    video_file_path_edit = QLineEdit()
+    video_file_path_edit.setPlaceholderText("Path to video file...")
+    video_file_path_edit.setEnabled(False)
+    batch_layout.addWidget(video_file_path_edit, 5, 1)
+
+    video_file_browse_btn = QPushButton("Browse...")
+    video_file_browse_btn.setEnabled(False)
+    batch_layout.addWidget(video_file_browse_btn, 5, 2)
+
     # Load w from file (for mode 2a - analyze pre-computed w.h5)
-    batch_layout.addWidget(QLabel("Load w from file:"), 5, 0)
+    batch_layout.addWidget(QLabel("Load w from file:"), 6, 0)
     load_w_path_edit = QLineEdit()
     load_w_path_edit.setPlaceholderText("Path to w.h5 file...")
     load_w_path_edit.setEnabled(False)
-    batch_layout.addWidget(load_w_path_edit, 5, 1)
+    batch_layout.addWidget(load_w_path_edit, 6, 1)
 
     load_w_browse_btn = QPushButton("Browse...")
     load_w_browse_btn.setEnabled(False)
-    batch_layout.addWidget(load_w_browse_btn, 5, 2)
+    batch_layout.addWidget(load_w_browse_btn, 6, 2)
+
+    # Corrected output path (for file-based modes that save corrected video)
+    batch_layout.addWidget(QLabel("Save corrected to:"), 7, 0)
+    corrected_path_edit = QLineEdit()
+    corrected_path_edit.setPlaceholderText("Path to save corrected video...")
+    corrected_path_edit.setEnabled(False)
+    batch_layout.addWidget(corrected_path_edit, 7, 1)
+
+    corrected_browse_btn = QPushButton("Browse...")
+    corrected_browse_btn.setEnabled(False)
+    batch_layout.addWidget(corrected_browse_btn, 7, 2)
 
     batch_group.setLayout(batch_layout)
 
@@ -135,11 +157,23 @@ def add_batch_processing_options(parent_layout, after_widget_index=1):
     batch_group.save_w_check = save_w_check
     batch_group.w_path_edit = w_path_edit
     batch_group.load_w_check = load_w_check
+    batch_group.video_file_path_edit = video_file_path_edit
+    batch_group.video_file_browse_btn = video_file_browse_btn
     batch_group.load_w_path_edit = load_w_path_edit
     batch_group.load_w_browse_btn = load_w_browse_btn
+    batch_group.corrected_path_edit = corrected_path_edit
+    batch_group.corrected_browse_btn = corrected_browse_btn
 
     # Connect signals
     save_w_check.toggled.connect(w_path_edit.setEnabled)
+
+    def browse_video_file():
+        from qtpy.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            None, "Select video file", "", "Video files (*.tif *.tiff *.h5 *.hdf5 *.mat)"
+        )
+        if file_path:
+            video_file_path_edit.setText(file_path)
 
     def browse_w_file():
         from qtpy.QtWidgets import QFileDialog
@@ -149,7 +183,17 @@ def add_batch_processing_options(parent_layout, after_widget_index=1):
         if file_path:
             load_w_path_edit.setText(file_path)
 
+    def browse_corrected_file():
+        from qtpy.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            None, "Save corrected video", "", "HDF5 files (*.h5);;TIFF files (*.tif *.tiff)"
+        )
+        if file_path:
+            corrected_path_edit.setText(file_path)
+
+    video_file_browse_btn.clicked.connect(browse_video_file)
     load_w_browse_btn.clicked.connect(browse_w_file)
+    corrected_browse_btn.clicked.connect(browse_corrected_file)
 
     return batch_group
 
@@ -215,13 +259,31 @@ def handle_mode_change(widget, mode_index: int):
             widget.batch_processing_group.w_path_edit.setVisible(mode_def.show_w_path)
 
         # Show/hide load w from file UI (for modes that need pre-computed w)
-        show_load_w = (mode_def.mode in (ProcessingMode.ANALYSIS_PRECOMPUTED, ProcessingMode.LOADED_WITH_PRECOMPUTED))
+        show_load_w = (mode_def.mode in (ProcessingMode.ANALYSIS_PRECOMPUTED, ProcessingMode.LOADED_WITH_PRECOMPUTED, ProcessingMode.FILE_WITH_PRECOMPUTED))
         if hasattr(widget.batch_processing_group, 'load_w_path_edit'):
             widget.batch_processing_group.load_w_path_edit.setVisible(show_load_w)
             widget.batch_processing_group.load_w_path_edit.setEnabled(show_load_w)
         if hasattr(widget.batch_processing_group, 'load_w_browse_btn'):
             widget.batch_processing_group.load_w_browse_btn.setVisible(show_load_w)
             widget.batch_processing_group.load_w_browse_btn.setEnabled(show_load_w)
+
+        # Show/hide video file input (for file-based modes)
+        show_video_file = (mode_def.input.source_type == "file")
+        if hasattr(widget.batch_processing_group, 'video_file_path_edit'):
+            widget.batch_processing_group.video_file_path_edit.setVisible(show_video_file)
+            widget.batch_processing_group.video_file_path_edit.setEnabled(show_video_file)
+        if hasattr(widget.batch_processing_group, 'video_file_browse_btn'):
+            widget.batch_processing_group.video_file_browse_btn.setVisible(show_video_file)
+            widget.batch_processing_group.video_file_browse_btn.setEnabled(show_video_file)
+
+        # Show/hide corrected output path (for modes that save corrected video)
+        show_corrected_path = mode_def.show_output_path
+        if hasattr(widget.batch_processing_group, 'corrected_path_edit'):
+            widget.batch_processing_group.corrected_path_edit.setVisible(show_corrected_path)
+            widget.batch_processing_group.corrected_path_edit.setEnabled(show_corrected_path)
+        if hasattr(widget.batch_processing_group, 'corrected_browse_btn'):
+            widget.batch_processing_group.corrected_browse_btn.setVisible(show_corrected_path)
+            widget.batch_processing_group.corrected_browse_btn.setEnabled(show_corrected_path)
 
     # Update flow combo based on requirements
     if hasattr(widget, 'flow_combo'):
@@ -293,6 +355,14 @@ def create_batch_processor_for_widget(widget) -> Optional[Callable]:
         return create_hybrid_process_worker(widget, mode_def)
     elif mode_def.mode == ProcessingMode.ANALYSIS_PRECOMPUTED:
         return create_precomputed_analysis_worker(widget, mode_def)
+    elif mode_def.mode == ProcessingMode.FILE_FULL_PIPELINE:
+        return create_file_full_pipeline_worker(widget, mode_def)
+    elif mode_def.mode == ProcessingMode.FILE_TO_MEMORY:
+        return create_file_to_memory_worker(widget, mode_def)
+    elif mode_def.mode == ProcessingMode.FILE_WITH_PRECOMPUTED:
+        return create_file_with_precomputed_worker(widget, mode_def)
+    elif mode_def.mode == ProcessingMode.ANALYSIS_STREAMING:
+        return create_analysis_streaming_worker(widget, mode_def)
     else:
         # Mode not yet implemented
         return None
@@ -358,10 +428,10 @@ def create_batch_process_worker(widget, mode_def: ModeDefinition):
                 )
 
             # Build options
+            # Note: parallelization uses default (all cores) since compensate_arr doesn't accept config parameter
             options = OFOptions(
                 quality_setting=QualitySetting.BALANCED,
-                buffer_size=batch_size,
-                n_jobs=workers
+                buffer_size=batch_size
             )
 
             # Setup callbacks
@@ -704,6 +774,324 @@ def create_precomputed_analysis_worker(widget, mode_def: ModeDefinition):
     return worker
 
 
+def create_file_full_pipeline_worker(widget, mode_def: ModeDefinition):
+    """
+    FILE_FULL_PIPELINE: Open video from file, compute w, save corrected + w to disk.
+    No layers added to viewer - only notify paths.
+    """
+    progress_signaler = ProgressSignaler()
+
+    @thread_worker
+    def process():
+        if sys.platform == "win32":
+            os.environ["NUMBA_DISABLE_INTEL_SVML"] = "1"
+
+        try:
+            from pyflowreg.util.io import load_video
+            from pyflowreg.motion_correction.compensate_recording import compensate_recording
+            from pyflowreg.motion_correction.OF_options import OFOptions, OutputFormat, QualitySetting
+
+            # Get file paths from batch UI
+            # TODO: Add video file path input to batch UI
+            video_path = widget.batch_processing_group.video_file_path_edit.text() if hasattr(widget.batch_processing_group, 'video_file_path_edit') else None
+            if not video_path:
+                raise ValueError("No video file path specified")
+
+            w_output_path = widget.batch_processing_group.w_path_edit.text()
+            corrected_output_path = widget.batch_processing_group.corrected_path_edit.text() if hasattr(widget.batch_processing_group, 'corrected_path_edit') else None
+
+            if not w_output_path or not corrected_output_path:
+                raise ValueError("Output paths for w and corrected video are required")
+
+            # Get batch options
+            batch_size = widget.batch_processing_group.batch_size_spin.value()
+            workers = widget.batch_processing_group.workers_spin.value()
+
+            # Load video from file
+            video, metadata = load_video(video_path)
+
+            # Get reference frame
+            reference = video[0] if video.ndim >= 3 else video
+
+            # Build options
+            # Note: parallelization uses default (all cores) since compensate_recording doesn't accept config parameter
+            options = OFOptions(
+                quality_setting=QualitySetting.BALANCED,
+                buffer_size=batch_size,
+                save_w=True,
+                w_output_path=w_output_path,
+                output_format=OutputFormat.HDF5 if corrected_output_path.endswith('.h5') else OutputFormat.TIFF,
+                output_path=corrected_output_path
+            )
+
+            # Progress callback
+            progress_tracker = ProgressTracker(
+                total_frames=video.shape[0],
+                progress_callback=lambda c, t: progress_signaler.progress_updated.emit(c, t)
+            )
+
+            # Run processing
+            compensate_recording(
+                video,
+                reference,
+                options,
+                progress_callback=lambda c, t: progress_tracker.w_callback(None, 0, c)
+            )
+
+            return {'w_path': w_output_path, 'corrected_path': corrected_output_path}
+
+        except Exception as e:
+            show_error(f"File pipeline failed: {str(e)}")
+            raise
+
+    worker = process()
+    worker.progress_signaler = progress_signaler
+    return worker
+
+
+def create_file_to_memory_worker(widget, mode_def: ModeDefinition):
+    """
+    FILE_TO_MEMORY: Process file and load corrected + w to viewer.
+    Shows RAM warning if mode_def.requires_confirmation.
+    """
+    progress_signaler = ProgressSignaler()
+
+    @thread_worker
+    def process():
+        if sys.platform == "win32":
+            os.environ["NUMBA_DISABLE_INTEL_SVML"] = "1"
+
+        try:
+            from pyflowreg.util.io import load_video
+            from pyflowreg.motion_correction.compensate_arr import compensate_arr
+            from pyflowreg.motion_correction.OF_options import OFOptions, OutputFormat, QualitySetting
+
+            video_path = widget.batch_processing_group.video_file_path_edit.text() if hasattr(widget.batch_processing_group, 'video_file_path_edit') else None
+            if not video_path:
+                raise ValueError("No video file path specified")
+
+            batch_size = widget.batch_processing_group.batch_size_spin.value()
+            workers = widget.batch_processing_group.workers_spin.value()
+
+            # Load video
+            video, metadata = load_video(video_path)
+            reference = video[0]
+
+            # Build options
+            # Note: parallelization uses default (all cores) since compensate_arr doesn't accept config parameter
+            options = OFOptions(
+                quality_setting=QualitySetting.BALANCED,
+                buffer_size=batch_size,
+                save_w=False,
+                output_format=OutputFormat.NULL
+            )
+
+            # Setup progress + w accumulator
+            dispatcher = CombinedCallbackDispatcher()
+
+            progress_tracker = ProgressTracker(
+                total_frames=video.shape[0],
+                progress_callback=lambda c, t: progress_signaler.progress_updated.emit(c, t)
+            )
+            dispatcher.add_callback(progress_tracker)
+
+            # Accumulate w for loading
+            w_shape = (*video.shape, 2) if video.ndim == 3 else (*video.shape[:-1], 2)
+            w_accumulator = WAccumulator(w_shape)
+            dispatcher.add_callback(w_accumulator)
+
+            # Run processing
+            corrected, _ = compensate_arr(
+                video,
+                reference,
+                options,
+                w_callback=dispatcher.w_callback
+            )
+
+            w = w_accumulator.get_accumulated()
+
+            return {'corrected': corrected, 'w': w}
+
+        except Exception as e:
+            show_error(f"File to memory failed: {str(e)}")
+            raise
+
+    worker = process()
+    worker.progress_signaler = progress_signaler
+    return worker
+
+
+def create_file_with_precomputed_worker(widget, mode_def: ModeDefinition):
+    """
+    FILE_WITH_PRECOMPUTED: Open video + w.h5 from file, apply correction, save corrected.
+    No layers added.
+    """
+    progress_signaler = ProgressSignaler()
+
+    @thread_worker
+    def process():
+        try:
+            import h5py
+            from pyflowreg.util.io import load_video, save_video
+            from pyflowreg.motion_correction.apply_displacement import apply_displacement_field
+
+            video_path = widget.batch_processing_group.video_file_path_edit.text() if hasattr(widget.batch_processing_group, 'video_file_path_edit') else None
+            w_path = widget.batch_processing_group.load_w_path_edit.text()
+            corrected_output_path = widget.batch_processing_group.corrected_path_edit.text() if hasattr(widget.batch_processing_group, 'corrected_path_edit') else None
+
+            if not video_path or not w_path or not corrected_output_path:
+                raise ValueError("Video path, w.h5 path, and output path are required")
+
+            batch_size = widget.batch_processing_group.batch_size_spin.value()
+
+            # Load video
+            video, metadata = load_video(video_path)
+
+            # Open w.h5
+            with h5py.File(w_path, 'r') as f:
+                w_dataset = f['w']
+                T, H, W, _ = w_dataset.shape
+
+                if (T != video.shape[0]) or (H != video.shape[1]) or (W != video.shape[2]):
+                    raise ValueError(f"Dimension mismatch: video {video.shape} vs w {w_dataset.shape}")
+
+                # Process and save corrected video in batches
+                corrected = np.zeros_like(video)
+
+                for batch_start in range(0, T, batch_size):
+                    batch_end = min(batch_start + batch_size, T)
+
+                    # Load w batch
+                    w_batch = w_dataset[batch_start:batch_end]
+
+                    # Apply displacement
+                    for i, t in enumerate(range(batch_start, batch_end)):
+                        corrected[t] = apply_displacement_field(video[t], w_batch[i])
+
+                    # Update progress
+                    progress_signaler.progress_updated.emit(batch_end, T)
+
+                # Save corrected video
+                save_video(corrected_output_path, corrected, metadata=metadata)
+
+            return {'corrected_path': corrected_output_path}
+
+        except Exception as e:
+            show_error(f"File with precomputed failed: {str(e)}")
+            raise
+
+    worker = process()
+    worker.progress_signaler = progress_signaler
+    return worker
+
+
+def create_analysis_streaming_worker(widget, mode_def: ModeDefinition):
+    """
+    ANALYSIS_STREAMING: Process from file, compute trajectories/stats only.
+    No corrected output, save_w optional, trajectories returned.
+    """
+    progress_signaler = ProgressSignaler()
+
+    @thread_worker
+    def process():
+        if sys.platform == "win32":
+            os.environ["NUMBA_DISABLE_INTEL_SVML"] = "1"
+
+        try:
+            from pyflowreg.util.io import load_video
+            from pyflowreg.motion_correction.compensate_arr import compensate_arr
+            from pyflowreg.motion_correction.OF_options import OFOptions, OutputFormat, QualitySetting
+
+            video_path = widget.batch_processing_group.video_file_path_edit.text() if hasattr(widget.batch_processing_group, 'video_file_path_edit') else None
+            if not video_path:
+                raise ValueError("No video file path specified")
+
+            batch_size = widget.batch_processing_group.batch_size_spin.value()
+            workers = widget.batch_processing_group.workers_spin.value()
+            save_w_path = widget.batch_processing_group.w_path_edit.text() if widget.batch_processing_group.save_w_check.isChecked() else None
+
+            # Load video
+            video, metadata = load_video(video_path)
+            reference = video[0]
+
+            # Build options
+            # Note: parallelization uses default (all cores) since compensate_arr doesn't accept config parameter
+            options = OFOptions(
+                quality_setting=QualitySetting.BALANCED,
+                buffer_size=batch_size,
+                save_w=bool(save_w_path),
+                w_output_path=save_w_path if save_w_path else None,
+                output_format=OutputFormat.NULL  # No corrected output
+            )
+
+            # Setup callbacks
+            dispatcher = CombinedCallbackDispatcher()
+
+            T = video.shape[0]
+            H, W = video.shape[1:3]
+
+            # Progress tracker
+            progress_tracker = ProgressTracker(
+                total_frames=T,
+                progress_callback=lambda c, t: progress_signaler.progress_updated.emit(c, t)
+            )
+            dispatcher.add_callback(progress_tracker)
+
+            # Trajectory tracker
+            trajectory_tracker = None
+            if mode_def.processing.trajectory_callback:
+                seed_points = None
+                for layer in widget.viewer.layers:
+                    try:
+                        extracted = extract_seed_points_from_layer(layer)
+                        if extracted is not None and len(extracted) > 0:
+                            seed_points = extracted
+                            break
+                    except:
+                        continue
+
+                if seed_points is not None:
+                    trajectory_tracker = BatchTrajectoryTracker(
+                        seed_points=seed_points,
+                        total_frames=T,
+                        H=H,
+                        W=W
+                    )
+                    dispatcher.add_callback(trajectory_tracker)
+
+            # ROI analyzer
+            analyzer = None
+            if widget.current_roi_layer:
+                roi_masks, roi_names = extract_roi_masks_from_shapes(
+                    widget.current_roi_layer, video.shape
+                )
+                if roi_masks and len(roi_masks) > 0:
+                    analyzer = ROIMotionAnalyzer(roi_masks, roi_names)
+                    dispatcher.add_callback(analyzer)
+
+            # Run processing
+            _, _ = compensate_arr(
+                video,
+                reference,
+                options,
+                w_callback=dispatcher.w_callback if len(dispatcher.callbacks) > 0 else None
+            )
+
+            # Collect results
+            tracks = trajectory_tracker.get_tracks_for_napari() if trajectory_tracker else None
+            roi_stats = analyzer.get_summary_statistics() if analyzer else None
+
+            return {'tracks': tracks, 'roi_stats': roi_stats, 'w_path': save_w_path}
+
+        except Exception as e:
+            show_error(f"Analysis streaming failed: {str(e)}")
+            raise
+
+    worker = process()
+    worker.progress_signaler = progress_signaler
+    return worker
+
+
 def integrate_batch_processing(widget):
     """
     Main integration function to be called on existing MotionAnalysisWidget.
@@ -743,6 +1131,25 @@ def integrate_batch_processing(widget):
             # Original behavior for online mode
             original_analyze()
         else:
+            # Get current mode definition
+            mode_names = _mode_manager.get_mode_names()
+            if widget.current_processing_mode < len(mode_names):
+                mode_name = mode_names[widget.current_processing_mode]
+                mode_def = _mode_manager.get_mode_by_name(mode_name)
+
+                # Check if mode requires confirmation
+                if mode_def and mode_def.requires_confirmation:
+                    from qtpy.QtWidgets import QMessageBox
+                    msg = QMessageBox()
+                    msg.setIcon(QMessageBox.Warning)
+                    msg.setText("High Memory Usage Warning")
+                    msg.setInformativeText(mode_def.warning_message or "This operation will load large data into memory.")
+                    msg.setWindowTitle("Confirm Operation")
+                    msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+
+                    if msg.exec_() != QMessageBox.Ok:
+                        return  # User cancelled
+
             # Batch processing modes
             worker = create_batch_processor_for_widget(widget)
             if worker:

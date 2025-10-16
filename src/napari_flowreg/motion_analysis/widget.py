@@ -32,6 +32,10 @@ from .integration import (
     create_batch_processor_for_widget
 )
 
+# Import wizard-based UI components
+from .wizard import ProcessingWizard, RunOptionsDialog
+from .tabs import AnalysisTabs, LayerSelectorWithPill
+
 
 class MotionAnalysisWidget(QWidget):
     """Widget for analyzing motion patterns from optical flow fields."""
