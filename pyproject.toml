@@ -44,12 +44,21 @@ dev = [
     "black",
     "ruff",
 ]
+docs = [
+    "sphinx>=7",
+    "myst-parser[linkify]",
+    "pydata-sphinx-theme",
+    "sphinx-copybutton",
+    "sphinx-design",
+    "sphinxcontrib-bibtex",
+    "sphinx-autodoc-typehints",
+]
 
 [project.urls]
 Homepage = "https://github.com/FlowRegSuite/napari-flowreg"
 Source = "https://github.com/FlowRegSuite/napari-flowreg"
 Tracker = "https://github.com/FlowRegSuite/napari-flowreg/issues"
-Documentation = "https://flowregsuite.github.io/napari-flowreg/"
+Documentation = "https://napari-flowreg.readthedocs.io/"
 
 [project.entry-points."napari.manifest"]
 napari-flowreg = "napari_flowreg:napari.yaml"

@@ -5,8 +5,9 @@ Provides tools for analyzing optical flow fields, tracking trajectories,
 and computing motion statistics using batch processing callbacks.
 """
 
-# Main widget
+# Main widgets
 from .widget import MotionAnalysisWidget
+from .widget_v2 import MotionAnalysisWidgetV2
 
 # Callback system for batch processing
 from .callbacks import (
@@ -37,11 +38,13 @@ from .integration import (
     add_batch_processing_options,
     handle_mode_change,
     create_batch_processor_for_widget,
+    create_worker_for_widget_v2,
 )
 
 __all__ = [
     # Widget
     "MotionAnalysisWidget",
+    "MotionAnalysisWidgetV2",
     # Callbacks
     "BatchTrajectoryTracker",
     "ROIMotionAnalyzer",
@@ -64,4 +67,5 @@ __all__ = [
     "add_batch_processing_options",
     "handle_mode_change",
     "create_batch_processor_for_widget",
+    "create_worker_for_widget_v2",
 ]

@@ -8,7 +8,7 @@ from typing import Optional
 import numpy as np
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGroupBox, QLabel,
-    QPushButton, QCheckBox, QComboBox, QSpinBox, QTabWidget,
+    QPushButton, QComboBox, QSpinBox, QTabWidget,
     QGridLayout
 )
 from qtpy.QtCore import Qt, Signal
@@ -129,6 +129,8 @@ class StatisticsTab(QWidget):
     def _init_ui(self):
         """Initialize UI."""
         layout = QVBoxLayout()
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         # ROI Selector
         self.roi_selector = LayerSelectorWithPill(
@@ -139,6 +141,8 @@ class StatisticsTab(QWidget):
         # Analysis Options
         options_group = QGroupBox("Analysis Options")
         options_layout = QGridLayout()
+        options_layout.setHorizontalSpacing(6)
+        options_layout.setVerticalSpacing(4)
 
         options_layout.addWidget(QLabel("Statistic Mode:"), 0, 0)
         self.stat_mode_combo = QComboBox()
@@ -221,9 +225,11 @@ class TrackingTab(QWidget):
         options_layout = QGridLayout()
 
         options_layout.addWidget(QLabel("Tracking Mode:"), 0, 0)
+        # Single forward mode for now; kept as an extension point for backward tracking.
         self.tracking_mode_combo = QComboBox()
-        self.tracking_mode_combo.addItems(["Forward (flow applied)", "Backward (flow inverted)"])
+        self.tracking_mode_combo.addItems(["Forward (flow applied)"])
         self.tracking_mode_combo.setToolTip("Direction of trajectory tracking")
+        self.tracking_mode_combo.setEnabled(False)
         options_layout.addWidget(self.tracking_mode_combo, 0, 1)
 
         options_layout.addWidget(QLabel("Tail Length:"), 1, 0)
@@ -239,11 +245,6 @@ class TrackingTab(QWidget):
         self.tail_width_spin.setValue(2)
         self.tail_width_spin.setToolTip("Width of track tail visualization")
         options_layout.addWidget(self.tail_width_spin, 2, 1)
-
-        # Track all checkbox
-        self.track_all_check = QCheckBox("Track all point layers")
-        self.track_all_check.setToolTip("Track all Points and Shapes layers with points")
-        options_layout.addWidget(self.track_all_check, 3, 0, 1, 2)
 
         options_group.setLayout(options_layout)
         layout.addWidget(options_group)
@@ -284,12 +285,12 @@ class AnalysisTabs(QTabWidget):
         super().__init__(parent)
 
         # Create tabs
-        self.statistics_tab = StatisticsTab()
         self.tracking_tab = TrackingTab()
+        self.statistics_tab = StatisticsTab()
 
         # Add tabs
-        self.addTab(self.statistics_tab, "Statistics")
         self.addTab(self.tracking_tab, "Tracking")
+        self.addTab(self.statistics_tab, "Statistics")
 
         # Set style
         self.setDocumentMode(True)  # Cleaner look on some platforms

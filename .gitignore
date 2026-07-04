@@ -85,3 +85,10 @@ _skbuild
 /CLAUDE.md
 
 _version.py
+
+# documentation build output
+docs/_build/
+
+# allow committed documentation screenshots despite the global *.png rule
+!docs/screenshots/
+!docs/screenshots/*.png

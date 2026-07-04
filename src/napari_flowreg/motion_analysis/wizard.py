@@ -13,7 +13,8 @@ from typing import Optional, Tuple
 from qtpy.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QLabel,
     QRadioButton, QButtonGroup, QDialog, QPushButton,
-    QGridLayout, QSpinBox, QCheckBox, QLineEdit, QFileDialog
+    QGridLayout, QSpinBox, QCheckBox, QLineEdit, QFileDialog,
+    QDoubleSpinBox, QComboBox
 )
 from qtpy.QtCore import Qt, Signal, QObject
 
@@ -33,7 +34,7 @@ class ProcessingWizard(QGroupBox):
     """
 
     def __init__(self, parent=None):
-        super().__init__("Processing Wizard", parent)
+        super().__init__("Motion Analysis Mode", parent)
 
         self.signaler = WizardSignaler()
         self._mode_manager = ModeManager()
@@ -278,8 +279,13 @@ class RunOptionsDialog(QDialog):
 
         batch_layout.addWidget(QLabel("Workers:"), 1, 0)
         self.workers_spin = QSpinBox()
-        self.workers_spin.setRange(1, 16)
-        self.workers_spin.setValue(4)
+        self.workers_spin.setRange(-1, 64)
+        self.workers_spin.setValue(-1)
+        self.workers_spin.setSpecialValueText("All cores (-1)")
+        self.workers_spin.setToolTip(
+            "Parallel worker processes for file-based pipelines "
+            "(-1 = use all cores). In-memory (loaded layer) runs ignore this."
+        )
         batch_layout.addWidget(self.workers_spin, 1, 1)
 
         batch_group.setLayout(batch_layout)
@@ -290,25 +296,25 @@ class RunOptionsDialog(QDialog):
         w_layout = QVBoxLayout()
 
         self.save_w_check = QCheckBox("Save displacement field (w) to disk")
-        self.save_w_check.setToolTip("Save displacement field to HDF5 file")
+        self.save_w_check.setToolTip("Write w.h5 into the specified output folder")
         w_layout.addWidget(self.save_w_check)
 
-        w_path_layout = QHBoxLayout()
-        w_path_layout.addWidget(QLabel("w.h5 path:"))
-        self.w_path_edit = QLineEdit()
-        self.w_path_edit.setPlaceholderText("Path to save w.h5...")
-        self.w_path_edit.setEnabled(False)
-        w_path_layout.addWidget(self.w_path_edit)
+        w_dir_layout = QHBoxLayout()
+        w_dir_layout.addWidget(QLabel("Output folder:"))
+        self.w_dir_edit = QLineEdit()
+        self.w_dir_edit.setPlaceholderText("Folder where w.h5 will be created...")
+        self.w_dir_edit.setEnabled(False)
+        w_dir_layout.addWidget(self.w_dir_edit)
 
-        self.w_browse_btn = QPushButton("Browse...")
-        self.w_browse_btn.setEnabled(False)
-        self.w_browse_btn.clicked.connect(self._browse_w_path)
-        w_path_layout.addWidget(self.w_browse_btn)
+        self.w_dir_browse_btn = QPushButton("Browse...")
+        self.w_dir_browse_btn.setEnabled(False)
+        self.w_dir_browse_btn.clicked.connect(self._browse_w_dir)
+        w_dir_layout.addWidget(self.w_dir_browse_btn)
 
-        w_layout.addLayout(w_path_layout)
+        w_layout.addLayout(w_dir_layout)
 
         # Load w to viewer option (only for specific modes)
-        self.load_w_check = QCheckBox("Load displacement field (w) to viewer (uses memory!)")
+        self.load_w_check = QCheckBox("Add displacement field (w) to viewer (uses memory!)")
         self.load_w_check.setStyleSheet("QCheckBox { color: orange; }")
         w_layout.addWidget(self.load_w_check)
 
@@ -369,27 +375,61 @@ class RunOptionsDialog(QDialog):
         layout.addWidget(corrected_group)
         self.corrected_output_group = corrected_group
 
-        # Trajectory Options
-        traj_group = QGroupBox("Trajectory Options")
-        traj_layout = QVBoxLayout()
+        # Flow parameters
+        flow_group = QGroupBox("Optical Flow Parameters")
+        flow_layout = QGridLayout()
 
-        self.enable_trajectories_check = QCheckBox("Compute trajectories")
-        self.enable_trajectories_check.setChecked(True)
-        traj_layout.addWidget(self.enable_trajectories_check)
+        flow_layout.addWidget(QLabel("Quality:"), 0, 0)
+        self.flow_quality_combo = QComboBox()
+        self.flow_quality_combo.addItems(["balanced", "quality", "fast", "custom"])
+        self.flow_quality_combo.setCurrentText("balanced")
+        flow_layout.addWidget(self.flow_quality_combo, 0, 1)
 
-        traj_group.setLayout(traj_layout)
-        layout.addWidget(traj_group)
+        flow_layout.addWidget(QLabel("Smoothness (alpha):"), 1, 0)
+        self.flow_alpha_spin = QDoubleSpinBox()
+        self.flow_alpha_spin.setRange(0.1, 10.0)
+        self.flow_alpha_spin.setSingleStep(0.1)
+        self.flow_alpha_spin.setValue(1.5)
+        flow_layout.addWidget(self.flow_alpha_spin, 1, 1)
 
-        # ROI Options
-        roi_group = QGroupBox("ROI Options")
-        roi_layout = QVBoxLayout()
+        flow_layout.addWidget(QLabel("Sigma XY:"), 2, 0)
+        self.flow_sigma_xy_spin = QDoubleSpinBox()
+        self.flow_sigma_xy_spin.setRange(0.0, 10.0)
+        self.flow_sigma_xy_spin.setSingleStep(0.1)
+        self.flow_sigma_xy_spin.setValue(1.0)
+        flow_layout.addWidget(self.flow_sigma_xy_spin, 2, 1)
 
-        self.enable_roi_stats_check = QCheckBox("Compute ROI statistics")
-        self.enable_roi_stats_check.setChecked(True)
-        roi_layout.addWidget(self.enable_roi_stats_check)
+        flow_layout.addWidget(QLabel("Sigma T:"), 3, 0)
+        self.flow_sigma_t_spin = QDoubleSpinBox()
+        self.flow_sigma_t_spin.setRange(0.0, 2.0)
+        self.flow_sigma_t_spin.setSingleStep(0.05)
+        self.flow_sigma_t_spin.setValue(0.1)
+        flow_layout.addWidget(self.flow_sigma_t_spin, 3, 1)
 
-        roi_group.setLayout(roi_layout)
-        layout.addWidget(roi_group)
+        flow_layout.addWidget(QLabel("Levels:"), 4, 0)
+        self.flow_levels_spin = QSpinBox()
+        self.flow_levels_spin.setRange(1, 200)
+        self.flow_levels_spin.setValue(100)
+        self.flow_levels_spin.setEnabled(False)
+        flow_layout.addWidget(self.flow_levels_spin, 4, 1)
+
+        flow_layout.addWidget(QLabel("Iterations:"), 5, 0)
+        self.flow_iterations_spin = QSpinBox()
+        self.flow_iterations_spin.setRange(1, 200)
+        self.flow_iterations_spin.setValue(50)
+        self.flow_iterations_spin.setEnabled(False)
+        flow_layout.addWidget(self.flow_iterations_spin, 5, 1)
+
+        flow_layout.addWidget(QLabel("Eta:"), 6, 0)
+        self.flow_eta_spin = QDoubleSpinBox()
+        self.flow_eta_spin.setRange(0.1, 1.0)
+        self.flow_eta_spin.setSingleStep(0.05)
+        self.flow_eta_spin.setValue(0.8)
+        self.flow_eta_spin.setEnabled(False)
+        flow_layout.addWidget(self.flow_eta_spin, 6, 1)
+
+        flow_group.setLayout(flow_layout)
+        layout.addWidget(flow_group)
 
         # Dialog buttons
         button_layout = QHBoxLayout()
@@ -409,16 +449,18 @@ class RunOptionsDialog(QDialog):
         self.setLayout(layout)
 
         # Connect signals
-        self.save_w_check.toggled.connect(self.w_path_edit.setEnabled)
-        self.save_w_check.toggled.connect(self.w_browse_btn.setEnabled)
+        self.save_w_check.toggled.connect(self.w_dir_edit.setEnabled)
+        self.save_w_check.toggled.connect(self.w_dir_browse_btn.setEnabled)
+        self.flow_quality_combo.currentTextChanged.connect(self._on_flow_quality_changed)
+        self._on_flow_quality_changed(self.flow_quality_combo.currentText())
 
-    def _browse_w_path(self):
-        """Browse for w.h5 save path."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save displacement field (w)", "", "HDF5 files (*.h5 *.hdf5)"
+    def _browse_w_dir(self):
+        """Browse for directory to store w.h5."""
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select output folder for displacement field"
         )
-        if file_path:
-            self.w_path_edit.setText(file_path)
+        if directory:
+            self.w_dir_edit.setText(directory)
 
     def _browse_load_w_path(self):
         """Browse for w.h5 load path."""
@@ -444,6 +486,11 @@ class RunOptionsDialog(QDialog):
         if file_path:
             self.corrected_path_edit.setText(file_path)
 
+    def _on_flow_quality_changed(self, quality: str):
+        custom = quality == "custom"
+        for widget in (self.flow_levels_spin, self.flow_iterations_spin, self.flow_eta_spin):
+            widget.setEnabled(custom)
+
     def update_visibility(self, wizard: ProcessingWizard):
         """Update visibility of options based on wizard state."""
         # Show/hide video file input
@@ -455,17 +502,24 @@ class RunOptionsDialog(QDialog):
         # Show/hide corrected output
         self.corrected_output_group.setVisible(wizard.requires_output_path())
 
+        # Saving/loading w is offered in all modes; the worker decides capability.
+
     def get_options(self) -> dict:
         """Get current run options as dictionary."""
         return {
             'batch_size': self.batch_size_spin.value(),
             'workers': self.workers_spin.value(),
             'save_w': self.save_w_check.isChecked(),
-            'w_path': self.w_path_edit.text() if self.save_w_check.isChecked() else None,
-            'load_w': self.load_w_check.isChecked(),
+            'w_dir': self.w_dir_edit.text() if self.save_w_check.isChecked() else None,
+            'export_w_viewer': self.load_w_check.isChecked(),
             'video_path': self.video_path_edit.text(),
             'load_w_path': self.load_w_path_edit.text(),
             'corrected_path': self.corrected_path_edit.text(),
-            'enable_trajectories': self.enable_trajectories_check.isChecked(),
-            'enable_roi_stats': self.enable_roi_stats_check.isChecked(),
+            'flow_quality': self.flow_quality_combo.currentText(),
+            'flow_alpha': self.flow_alpha_spin.value(),
+            'flow_sigma_xy': self.flow_sigma_xy_spin.value(),
+            'flow_sigma_t': self.flow_sigma_t_spin.value(),
+            'flow_levels': self.flow_levels_spin.value(),
+            'flow_iterations': self.flow_iterations_spin.value(),
+            'flow_eta': self.flow_eta_spin.value(),
         }

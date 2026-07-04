@@ -7,7 +7,12 @@ contributions:
     - id: napari-flowreg.flowreg_widget
       python_name: napari_flowreg.flowreg_widget:FlowRegWidget
       title: open widget
+    - id: napari-flowreg.motion_analysis_v2
+      python_name: napari_flowreg.motion_analysis.widget_v2:MotionAnalysisWidgetV2
+      title: open motion analysis v2
 
   widgets:
     - command: napari-flowreg.flowreg_widget
       display_name: Flow-Registration
+    - command: napari-flowreg.motion_analysis_v2
+      display_name: Flow-Registration Analysis (Experimental)
