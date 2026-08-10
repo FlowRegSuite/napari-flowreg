@@ -27,6 +27,7 @@ dependencies = [
     "numpy",
     "scipy>=1.10.0",
     "matplotlib>=3.5.0",
+    "napari-flowreg-formats>=0.1.0a1",
 ]
 
 [project.optional-dependencies]
