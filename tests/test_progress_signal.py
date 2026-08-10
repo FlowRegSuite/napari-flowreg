@@ -2,12 +2,14 @@
 Test progress signaling in FlowRegWidget.
 """
 
+import importlib
+import time
+from unittest.mock import MagicMock, patch
+
 import pytest
 import numpy as np
 from qtpy.QtCore import QObject, QThread
 from qtpy.QtTest import QSignalSpy
-from unittest.mock import MagicMock, patch
-import time
 
 
 def test_progress_signal_connection(make_napari_viewer, qtbot):
@@ -66,7 +68,10 @@ def test_progress_callback_integration(make_napari_viewer, qtbot):
 
     # Mock the actual motion correction to simulate progress callbacks
     # Also patch ViewerModel.add_image at class level to prevent teardown errors
-    with patch('pyflowreg.motion_correction.compensate_arr.compensate_arr') as mock_compensate, \
+    compensate_arr_module = importlib.import_module(
+        'pyflowreg.motion_correction.compensate_arr'
+    )
+    with patch.object(compensate_arr_module, 'compensate_arr') as mock_compensate, \
          patch('napari.components.viewer_model.ViewerModel.add_image', MagicMock(return_value=None)):
         # Simulate motion correction with progress callbacks
         def mock_correction(video, ref, options, progress_callback=None):
